@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -60,8 +61,18 @@ func checkConfig() {
 }
 
 func checkKeys() KeyPair {
-	// todo: implement reading from file
-	return generateKeys()
+	_, pubKeyErr := os.Stat("config/key.pub")
+	_, privKeyErr := os.Stat("config/key.priv")
+	if os.IsNotExist(pubKeyErr) && os.IsNotExist(privKeyErr) {
+		createKeyFiles()
+	}
+
+	var keys KeyPair
+
+	keys.pub = readBytesFromFile("config/key.pub")
+	keys.priv = readBytesFromFile("config/key.priv")
+
+	return keys
 }
 
 func (a *App) Initialize() {
@@ -87,6 +98,21 @@ func generateKeys() KeyPair {
 	return keys
 }
 
+func readBytesFromFile(filename string) []byte {
+	// Open file for reading
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return data
+}
+
 func writeBytesToFile(filename string, bytes []byte) bool {
 	file, openErr := os.OpenFile(filename, os.O_RDWR, 0700)
 	if openErr != nil {
@@ -94,7 +120,7 @@ func writeBytesToFile(filename string, bytes []byte) bool {
 		log.Fatal(openErr)
 		return false
 	}
-	file.Write([]byte(hex.EncodeToString(bytes)))
+	file.Write(bytes)
 	syncErr := file.Sync()
 	if syncErr != nil {
 		log.Fatal(syncErr)
