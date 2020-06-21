@@ -16,7 +16,7 @@ type App struct {
 
 func (a *App) Initialize() {
 	router := mux.NewRouter()
-	router.Handle("/", SocketHandler()).Methods("GET")
+	router.Handle("/socket", SocketHandler()).Methods("GET")
 	a.Router = router
 }
 
@@ -27,17 +27,28 @@ func main() {
 }
 
 func SocketHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
 		var upgrader = websocket.Upgrader{
-			// EnableCompression: true,
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		}
 
-		upgrader.CheckOrigin = func(r *http.Request) bool { return true }
-		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer conn.Close()
+		upgrader.CheckOrigin = func(req *http.Request) bool { return true }
+
+		conn, _ := upgrader.Upgrade(res, req, nil)
 		fmt.Println("Connection opened!")
+
+		for {
+			msgType, msg, err := conn.ReadMessage()
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			fmt.Println(string(msg))
+			conn.WriteMessage(msgType, msg)
+		}
 	})
 }
 
