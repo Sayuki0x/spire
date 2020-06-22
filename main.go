@@ -18,16 +18,25 @@ import (
 
 const version string = "v0.1.0"
 
+// Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
 	Type string      `json:"type"`
 	Data interface{} `json:"data"`
 }
 
-type KeyPair struct {
+// EdKeys is a type that contains a public and private ed25519 key.
+type EdKeys struct {
 	pub  ed25519.PublicKey
 	priv ed25519.PrivateKey
 }
 
+// PubKeys is a type that contains only public keys, as hex encoded strings.
+type PubKeys struct {
+	pub    string
+	signed string
+}
+
+// App is the main app.
 type App struct {
 	Router *mux.Router
 }
@@ -60,14 +69,14 @@ func checkConfig() {
 	}
 }
 
-func checkKeys() KeyPair {
+func checkKeys() EdKeys {
 	_, pubKeyErr := os.Stat("config/key.pub")
 	_, privKeyErr := os.Stat("config/key.priv")
 	if os.IsNotExist(pubKeyErr) && os.IsNotExist(privKeyErr) {
 		createKeyFiles()
 	}
 
-	var keys KeyPair
+	var keys EdKeys
 
 	keys.pub = readBytesFromFile("config/key.pub")
 	keys.priv = readBytesFromFile("config/key.priv")
@@ -75,6 +84,7 @@ func checkKeys() KeyPair {
 	return keys
 }
 
+// Initialize does the initialization of App.
 func (a *App) Initialize() {
 	checkConfig()
 	var keys = checkKeys()
@@ -84,13 +94,13 @@ func (a *App) Initialize() {
 	a.Router = router
 }
 
-func generateKeys() KeyPair {
+func generateKeys() EdKeys {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		log.Fatal("Something went wrong generating the keys.")
 	}
 
-	var keys KeyPair
+	var keys EdKeys
 
 	keys.pub = pub
 	keys.priv = priv
@@ -138,18 +148,26 @@ func main() {
 
 func createMessage(Type string, Data interface{}) ([]byte, error) {
 	var response Message
+
+	fmt.Println(Data)
+
 	response.Type = Type
 	response.Data = Data
+
+	fmt.Println(response.Data)
 
 	byteResponse, err := json.Marshal(response)
 	if err != nil {
 		log.Fatal("Programmer error!")
 	}
 
+	fmt.Println(string(byteResponse))
+
 	return byteResponse, err
 }
 
-func SocketHandler(keys KeyPair) http.Handler {
+// SocketHandler handles the websocket connection messages and responses.
+func SocketHandler(keys EdKeys) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		var upgrader = websocket.Upgrader{
@@ -183,7 +201,15 @@ func SocketHandler(keys KeyPair) http.Handler {
 			switch message.Type {
 			case "auth":
 				fmt.Println("Auth message received.")
-				response, err := createMessage(message.Type, hex.EncodeToString(keys.pub))
+
+				var pubKeys PubKeys
+
+				pubKeys.pub = hex.EncodeToString(keys.pub)
+				pubKeys.signed = hex.EncodeToString(ed25519.Sign(keys.priv, keys.pub))
+
+				fmt.Println(pubKeys)
+
+				response, err := createMessage(message.Type, pubKeys)
 				if err != nil {
 					log.Fatal("Programmer error!")
 					continue
@@ -203,6 +229,7 @@ func SocketHandler(keys KeyPair) http.Handler {
 	})
 }
 
+// Run starts the http server.
 func (a *App) Run(addr string) {
 	http.ListenAndServe(addr, a.Router)
 }
