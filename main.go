@@ -303,11 +303,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				break
 			}
 
-			log.Debug("IN: " + string(msg))
+			log.Debug("IN ", string(msg))
 
 			switch message.Type {
 			case "register":
-				log.Info("REGISTER")
 				// first we parse the client's auth json
 				var registerMessage RegisterMessage
 				json.Unmarshal(msg, &registerMessage)
@@ -336,7 +335,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 					// finally we respond to the websocket request
-					log.Debug("OUT: " + string(response))
+					log.Debug("OUT", string(response))
 					conn.WriteMessage(msgType, response)
 				} else {
 					log.Warning("Invalid signature.")
@@ -344,7 +343,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 
 			case "version":
-				log.Info("REGISTER")
 				// first we read the client's version
 				var clientVersion VersionMessage
 				json.Unmarshal(msg, &clientVersion)
@@ -359,7 +357,9 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					// if they're not present, they need to register first
 					if clientDbEntry.ID == 0 {
+						log.Warning("User is not registered.")
 						response, err := createErrorMessage("error", hex.EncodeToString(keys.Pub), "You need to register first.")
+						log.Debug("OUT", string(response))
 						if err != nil {
 							log.Fatal("Programmer error!")
 							continue
@@ -378,7 +378,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						}
 
 						// finally we respond to the websocket request
-						log.Debug("OUT: " + string(response))
+						log.Debug("OUT", string(response))
 						conn.WriteMessage(msgType, response)
 					}
 				} else {
