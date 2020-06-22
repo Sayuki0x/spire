@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"github.com/op/go-logging"
 )
 
 const version string = "v0.1.0"
@@ -74,9 +75,28 @@ type PubKeys struct {
 type App struct {
 	Router *mux.Router
 	Db     *gorm.DB
+	Log    *logging.Logger
 }
 
-func createKeyFiles() {
+func printAscii(log *logging.Logger) {
+	fmt.Printf("\033[35mvvvvvvv           vvvvvvv    eeeeeeeeeeee    xxxxxxx      xxxxxxx\n" +
+		" v:::::v         v:::::v   ee::::::::::::ee   x:::::x    x:::::x \n" +
+		"  v:::::v       v:::::v   e::::::eeeee:::::ee  x:::::x  x:::::x  \n" +
+		"   v:::::v     v:::::v   e::::::e     e:::::e   x:::::xx:::::x   \n" +
+		"    v:::::v   v:::::v    e:::::::eeeee::::::e    x::::::::::x    \n" +
+		"     v:::::v v:::::v     e:::::::::::::::::e      x::::::::x     \n" +
+		"      v:::::v:::::v      e::::::eeeeeeeeeee       x::::::::x     \n" +
+		"       v:::::::::v       e:::::::e               x::::::::::x    \n" +
+		"        v:::::::v        e::::::::e             x:::::xx:::::x   \n" +
+		"         v:::::v          e::::::::eeeeeeee    x:::::x  x:::::x  \n" +
+		"          v:::v            ee:::::::::::::e   x:::::x    x:::::x \n" +
+		"           vvv               eeeeeeeeeeeeee  xxxxxxx      xxxxxxx\033[37m\n\n")
+	log.Info("Vex version number " + version)
+	log.Info("All Rights Reserved © 2020 ExtraHash")
+}
+
+func createKeyFiles(log *logging.Logger) {
+	log.Debug("Creating keyfiles.")
 	_, pubKeyErr := os.Stat("config/key.pub")
 	if os.IsNotExist(pubKeyErr) {
 		os.Create("config/key.pub")
@@ -88,53 +108,69 @@ func createKeyFiles() {
 
 	keys := generateKeys()
 
-	writeBytesToFile("config/key.pub", keys.Pub)
-	writeBytesToFile("config/key.priv", keys.Priv)
+	writeBytesToFile("config/key.pub", keys.Pub, log)
+	writeBytesToFile("config/key.priv", keys.Priv, log)
 }
 
-func checkConfig() {
+func checkConfig(log *logging.Logger) {
 	_, configErr := os.Stat("config")
 	if os.IsNotExist(configErr) {
+		log.Debug("Creating configuration folder.")
 		os.Mkdir("config", 0700)
 	}
 	_, pubKeyErr := os.Stat("config/key.pub")
 	_, privKeyErr := os.Stat("config/key.priv")
 	if os.IsNotExist(privKeyErr) && os.IsNotExist(pubKeyErr) {
-		createKeyFiles()
+		createKeyFiles(log)
 	}
 }
 
-func checkKeys() KeyPair {
+func checkKeys(log *logging.Logger) KeyPair {
 	_, pubKeyErr := os.Stat("config/key.pub")
 	_, privKeyErr := os.Stat("config/key.priv")
 	if os.IsNotExist(pubKeyErr) && os.IsNotExist(privKeyErr) {
-		createKeyFiles()
+		createKeyFiles(log)
 	}
 
 	var keys KeyPair
 
-	keys.Pub = readBytesFromFile("config/key.pub")
-	keys.Priv = readBytesFromFile("config/key.priv")
+	keys.Pub = readBytesFromFile("config/key.pub", log)
+	keys.Priv = readBytesFromFile("config/key.priv", log)
+
+	log.Info("Server public key " + hex.EncodeToString(keys.Pub))
 
 	return keys
 }
 
 // Initialize does the initialization of App.
 func (a *App) Initialize() {
-	checkConfig()
-	var keys = checkKeys()
+	//initialize logger
+	var log = logging.MustGetLogger("vex")
+	var format = logging.MustStringFormatter(
+		`%{color}%{time:15:04:05.000} ▶ %{level:.4s}%{color:reset} %{message}`,
+	)
+	backend := logging.NewLogBackend(os.Stderr, "", 0)
+	backendFormatter := logging.NewBackendFormatter(backend, format)
+	logging.SetBackend(backendFormatter)
+
+	printAscii(log)
+
+	// initialize configuration files
+	checkConfig(log)
+	var keys = checkKeys(log)
 
 	// initialize database
 	db, err := gorm.Open("sqlite3", "vex.db")
 	if err != nil {
-		panic("failed to connect database")
+		log.Error("Failed to connect to database.")
+		os.Exit(1)
 	}
 	db.AutoMigrate(&Client{})
 	a.Db = db
 
 	// initialize router
 	router := mux.NewRouter()
-	router.Handle("/socket", SocketHandler(keys, db)).Methods("GET")
+	router.Handle("/socket", SocketHandler(keys, db, log)).Methods("GET")
 	a.Router = router
 }
 
@@ -152,7 +188,7 @@ func generateKeys() KeyPair {
 	return keys
 }
 
-func readBytesFromFile(filename string) []byte {
+func readBytesFromFile(filename string, log *logging.Logger) []byte {
 	// Open file for reading
 	file, openErr := os.Open(filename)
 	if openErr != nil {
@@ -169,7 +205,7 @@ func readBytesFromFile(filename string) []byte {
 	return bytes
 }
 
-func writeBytesToFile(filename string, bytes []byte) bool {
+func writeBytesToFile(filename string, bytes []byte, log *logging.Logger) bool {
 	file, openErr := os.OpenFile(filename, os.O_RDWR, 0700)
 	if openErr != nil {
 		log.Fatal("Error opening file " + filename + " for writing.")
@@ -238,7 +274,7 @@ func createRegisterMessage(Type string, pubKey string, Data PubKeys) ([]byte, er
 }
 
 // SocketHandler handles the websocket connection messages and responses.
-func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
+func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		var upgrader = websocket.Upgrader{
@@ -249,12 +285,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 		upgrader.CheckOrigin = func(req *http.Request) bool { return true }
 
 		conn, _ := upgrader.Upgrade(res, req, nil)
-		fmt.Println("Connection opened!")
+		log.Notice("Incoming websocket connection.")
 
 		for {
 			msgType, msg, err := conn.ReadMessage()
 			if err != nil {
-				fmt.Println(err)
+				log.Error(err)
 				return
 			}
 
@@ -262,13 +298,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 			json.Unmarshal(msg, &message)
 
 			if message.Type == "" {
-				fmt.Println("Invalid message, closing connection.")
+				log.Warning("Invalid message, closing connection.")
 				conn.Close()
 				break
 			}
 
+			log.Debug("IN: " + string(msg))
+
 			switch message.Type {
 			case "register":
+				log.Info("REGISTER")
 				// first we parse the client's auth json
 				var registerMessage RegisterMessage
 				json.Unmarshal(msg, &registerMessage)
@@ -297,13 +336,15 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 					}
 
 					// finally we respond to the websocket request
+					log.Debug("OUT: " + string(response))
 					conn.WriteMessage(msgType, response)
 				} else {
-					print("Invalid signature.")
+					log.Warning("Invalid signature.")
 					conn.Close()
 				}
 
 			case "version":
+				log.Info("REGISTER")
 				// first we read the client's version
 				var clientVersion VersionMessage
 				json.Unmarshal(msg, &clientVersion)
@@ -337,15 +378,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 						}
 
 						// finally we respond to the websocket request
+						log.Debug("OUT: " + string(response))
 						conn.WriteMessage(msgType, response)
 					}
 				} else {
-					fmt.Println("Invalid signature.")
+					log.Warning("Invalid signature.")
 					conn.Close()
 				}
 
 			default:
-				fmt.Println("Unsupported " + message.Type + " message received.")
+				log.Warning("Unsupported " + message.Type + " message received.")
 			}
 		}
 	})
@@ -354,4 +396,5 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 // Run starts the http server.
 func (a *App) Run(addr string) {
 	http.ListenAndServe(addr, a.Router)
+	a.Log.Info("API listening on " + addr)
 }
