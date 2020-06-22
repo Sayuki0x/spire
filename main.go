@@ -46,6 +46,12 @@ type VersionMessage struct {
 	Data   VersionData `json:"data"`
 }
 
+type ErrorMessage struct {
+	Type   string `json:"type"`
+	PubKey string `json:"pubKey"`
+	Data   string `json:"data"`
+}
+
 // KeyPair is a type that contains a public and private ed25519 key.
 type KeyPair struct {
 	Pub    ed25519.PublicKey
@@ -184,11 +190,12 @@ func main() {
 	a.Run(":8000")
 }
 
-func createVersionMessage(Type string, pubKey string, Data VersionData) ([]byte, error) {
-	var response VersionMessage
+func createErrorMessage(Type string, pubKey string, Data string) ([]byte, error) {
+	var response ErrorMessage
 
 	response.Type = Type
 	response.Data = Data
+	response.PubKey = pubKey
 
 	byteResponse, err := json.Marshal(response)
 	if err != nil {
@@ -198,11 +205,27 @@ func createVersionMessage(Type string, pubKey string, Data VersionData) ([]byte,
 	return byteResponse, err
 }
 
-func createPubKeysMessage(Type string, pubKey string, Data PubKeys) ([]byte, error) {
+func createVersionMessage(Type string, pubKey string, Data VersionData) ([]byte, error) {
+	var response VersionMessage
+
+	response.Type = Type
+	response.Data = Data
+	response.PubKey = pubKey
+
+	byteResponse, err := json.Marshal(response)
+	if err != nil {
+		log.Fatal("Programmer error!")
+	}
+
+	return byteResponse, err
+}
+
+func createRegisterMessage(Type string, pubKey string, Data PubKeys) ([]byte, error) {
 	var response RegisterMessage
 
 	response.Type = Type
 	response.Data = Data
+	response.PubKey = pubKey
 
 	byteResponse, err := json.Marshal(response)
 	if err != nil {
@@ -258,17 +281,17 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 					var pubKeys PubKeys
 					pubKeys.Pub = hex.EncodeToString(keys.Pub)
 					pubKeys.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, keys.Pub))
-					response, err := createPubKeysMessage(message.Type, hex.EncodeToString(keys.Pub), pubKeys)
+					response, err := createRegisterMessage(message.Type, hex.EncodeToString(keys.Pub), pubKeys)
 					if err != nil {
 						log.Fatal("Programmer error!")
 						continue
 					}
 
 					var clientDbEntry Client
-					db.First(&clientDbEntry, "pub_key = ?", pubKeys.Pub)
+					db.First(&clientDbEntry, "pub_key = ?", registerMessage.Data.Pub)
 
 					if clientDbEntry.ID == 0 {
-						db.Create(&Client{PubKey: pubKeys.Pub, Username: pubKeys.Pub})
+						db.Create(&Client{PubKey: registerMessage.Data.Pub, Username: registerMessage.Data.Pub})
 					}
 
 					// finally we respond to the websocket request
@@ -287,20 +310,38 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				signature, _ := hex.DecodeString(clientVersion.Data.Signed)
 
 				if ed25519.Verify(clientPublicKey, []byte(clientVersion.Data.Version), signature) {
-					// next we construct our own VersionMessage in reply
-					var versionMessage VersionMessage
-					versionMessage.Type = "version"
-					versionMessage.Data.Version = version
-					versionMessage.Data.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(version)))
+					// first we check if user exists in database
 
-					response, err := createVersionMessage(message.Type, hex.EncodeToString(keys.Pub), versionMessage.Data)
-					if err != nil {
-						log.Fatal("Programmer error!")
-						continue
+					fmt.Println(clientVersion.PubKey)
+
+					var clientDbEntry Client
+					db.First(&clientDbEntry, "pub_key = ?", clientVersion.PubKey)
+
+					fmt.Println(clientDbEntry)
+
+					// if they're not present, they need to register first
+					if clientDbEntry.ID == 0 {
+						response, err := createErrorMessage("error", hex.EncodeToString(keys.Pub), "You need to register first.")
+						if err != nil {
+							log.Fatal("Programmer error!")
+							continue
+						}
+						conn.WriteMessage(msgType, response)
+					} else {
+						// next we construct our own VersionMessage in reply
+						var versionData VersionData
+						versionData.Version = version
+						versionData.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(version)))
+
+						response, err := createVersionMessage("version", hex.EncodeToString(keys.Pub), versionData)
+						if err != nil {
+							log.Fatal("Programmer error!")
+							continue
+						}
+
+						// finally we respond to the websocket request
+						conn.WriteMessage(msgType, response)
 					}
-
-					// finally we respond to the websocket request
-					conn.WriteMessage(msgType, response)
 				} else {
 					fmt.Println("Invalid signature.")
 					conn.Close()
