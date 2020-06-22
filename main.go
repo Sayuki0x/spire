@@ -26,14 +26,15 @@ type Message struct {
 
 // EdKeys is a type that contains a public and private ed25519 key.
 type EdKeys struct {
-	pub  ed25519.PublicKey
-	priv ed25519.PrivateKey
+	Pub    ed25519.PublicKey
+	Priv   ed25519.PrivateKey
+	Signed []byte
 }
 
 // PubKeys is a type that contains only public keys, as hex encoded strings.
 type PubKeys struct {
-	pub    string
-	signed string
+	Pub    string
+	Signed string
 }
 
 // App is the main app.
@@ -53,8 +54,8 @@ func createKeyFiles() {
 
 	keys := generateKeys()
 
-	writeBytesToFile("config/key.pub", keys.pub)
-	writeBytesToFile("config/key.priv", keys.priv)
+	writeBytesToFile("config/key.pub", keys.Pub)
+	writeBytesToFile("config/key.priv", keys.Priv)
 }
 
 func checkConfig() {
@@ -78,8 +79,8 @@ func checkKeys() EdKeys {
 
 	var keys EdKeys
 
-	keys.pub = readBytesFromFile("config/key.pub")
-	keys.priv = readBytesFromFile("config/key.priv")
+	keys.Pub = readBytesFromFile("config/key.pub")
+	keys.Priv = readBytesFromFile("config/key.priv")
 
 	return keys
 }
@@ -102,8 +103,8 @@ func generateKeys() EdKeys {
 
 	var keys EdKeys
 
-	keys.pub = pub
-	keys.priv = priv
+	keys.Pub = pub
+	keys.Priv = priv
 
 	return keys
 }
@@ -149,12 +150,8 @@ func main() {
 func createMessage(Type string, Data interface{}) ([]byte, error) {
 	var response Message
 
-	fmt.Println(Data)
-
 	response.Type = Type
 	response.Data = Data
-
-	fmt.Println(response.Data)
 
 	byteResponse, err := json.Marshal(response)
 	if err != nil {
@@ -204,10 +201,8 @@ func SocketHandler(keys EdKeys) http.Handler {
 
 				var pubKeys PubKeys
 
-				pubKeys.pub = hex.EncodeToString(keys.pub)
-				pubKeys.signed = hex.EncodeToString(ed25519.Sign(keys.priv, keys.pub))
-
-				fmt.Println(pubKeys)
+				pubKeys.Pub = hex.EncodeToString(keys.Pub)
+				pubKeys.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, keys.Pub))
 
 				response, err := createMessage(message.Type, pubKeys)
 				if err != nil {
