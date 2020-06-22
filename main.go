@@ -14,21 +14,48 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/sqlite"
 )
 
 const version string = "v0.1.0"
 
-// Message is a type for websocket messages that pass to and from server and client.
-type Message struct {
-	Type string      `json:"type"`
-	Data interface{} `json:"data"`
+type Client struct {
+	gorm.Model
+	PubKey   string
+	Username string
 }
 
-// EdKeys is a type that contains a public and private ed25519 key.
-type EdKeys struct {
+// Message is a type for websocket messages that pass to and from server and client.
+type Message struct {
+	Type   string `json:"type"`
+	PubKey string `json:"pubKey"`
+}
+
+// RegisterMessage is a type for authorization websocket messages that pass to and from server and client.
+type RegisterMessage struct {
+	Type   string  `json:"type"`
+	PubKey string  `json:"pubKey"`
+	Data   PubKeys `json:"data"`
+}
+
+// VersionMessage is a type for version websocket messages that pass to and from server and client.
+type VersionMessage struct {
+	Type   string      `json:"type"`
+	PubKey string      `json:"pubKey"`
+	Data   VersionData `json:"data"`
+}
+
+// KeyPair is a type that contains a public and private ed25519 key.
+type KeyPair struct {
 	Pub    ed25519.PublicKey
 	Priv   ed25519.PrivateKey
 	Signed []byte
+}
+
+type VersionData struct {
+	Version string
+	Signed  string
 }
 
 // PubKeys is a type that contains only public keys, as hex encoded strings.
@@ -40,6 +67,7 @@ type PubKeys struct {
 // App is the main app.
 type App struct {
 	Router *mux.Router
+	Db     *gorm.DB
 }
 
 func createKeyFiles() {
@@ -70,14 +98,14 @@ func checkConfig() {
 	}
 }
 
-func checkKeys() EdKeys {
+func checkKeys() KeyPair {
 	_, pubKeyErr := os.Stat("config/key.pub")
 	_, privKeyErr := os.Stat("config/key.priv")
 	if os.IsNotExist(pubKeyErr) && os.IsNotExist(privKeyErr) {
 		createKeyFiles()
 	}
 
-	var keys EdKeys
+	var keys KeyPair
 
 	keys.Pub = readBytesFromFile("config/key.pub")
 	keys.Priv = readBytesFromFile("config/key.priv")
@@ -90,18 +118,27 @@ func (a *App) Initialize() {
 	checkConfig()
 	var keys = checkKeys()
 
+	// initialize database
+	db, err := gorm.Open("sqlite3", "vex.db")
+	if err != nil {
+		panic("failed to connect database")
+	}
+	db.AutoMigrate(&Client{})
+	a.Db = db
+
+	// initialize router
 	router := mux.NewRouter()
-	router.Handle("/socket", SocketHandler(keys)).Methods("GET")
+	router.Handle("/socket", SocketHandler(keys, db)).Methods("GET")
 	a.Router = router
 }
 
-func generateKeys() EdKeys {
+func generateKeys() KeyPair {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		log.Fatal("Something went wrong generating the keys.")
 	}
 
-	var keys EdKeys
+	var keys KeyPair
 
 	keys.Pub = pub
 	keys.Priv = priv
@@ -147,8 +184,8 @@ func main() {
 	a.Run(":8000")
 }
 
-func createMessage(Type string, Data interface{}) ([]byte, error) {
-	var response Message
+func createVersionMessage(Type string, pubKey string, Data VersionData) ([]byte, error) {
+	var response VersionMessage
 
 	response.Type = Type
 	response.Data = Data
@@ -158,13 +195,25 @@ func createMessage(Type string, Data interface{}) ([]byte, error) {
 		log.Fatal("Programmer error!")
 	}
 
-	fmt.Println(string(byteResponse))
+	return byteResponse, err
+}
+
+func createPubKeysMessage(Type string, pubKey string, Data PubKeys) ([]byte, error) {
+	var response RegisterMessage
+
+	response.Type = Type
+	response.Data = Data
+
+	byteResponse, err := json.Marshal(response)
+	if err != nil {
+		log.Fatal("Programmer error!")
+	}
 
 	return byteResponse, err
 }
 
 // SocketHandler handles the websocket connection messages and responses.
-func SocketHandler(keys EdKeys) http.Handler {
+func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		var upgrader = websocket.Upgrader{
@@ -193,30 +242,70 @@ func SocketHandler(keys EdKeys) http.Handler {
 				break
 			}
 
-			fmt.Println(message)
-
 			switch message.Type {
-			case "auth":
-				fmt.Println("Auth message received.")
+			case "register":
+				// first we parse the client's auth json
+				var registerMessage RegisterMessage
+				json.Unmarshal(msg, &registerMessage)
 
-				var pubKeys PubKeys
+				var clientKeyPair KeyPair
+				clientKeyPair.Pub, _ = hex.DecodeString(registerMessage.Data.Pub)
+				clientKeyPair.Signed, _ = hex.DecodeString(registerMessage.Data.Signed)
 
-				pubKeys.Pub = hex.EncodeToString(keys.Pub)
-				pubKeys.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, keys.Pub))
+				// if signature verifies
+				if ed25519.Verify(clientKeyPair.Pub, clientKeyPair.Pub, clientKeyPair.Signed) {
+					// then we construct our own RegisterMessage in reply
+					var pubKeys PubKeys
+					pubKeys.Pub = hex.EncodeToString(keys.Pub)
+					pubKeys.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, keys.Pub))
+					response, err := createPubKeysMessage(message.Type, hex.EncodeToString(keys.Pub), pubKeys)
+					if err != nil {
+						log.Fatal("Programmer error!")
+						continue
+					}
 
-				response, err := createMessage(message.Type, pubKeys)
-				if err != nil {
-					log.Fatal("Programmer error!")
-					continue
+					var clientDbEntry Client
+					db.First(&clientDbEntry, "pub_key = ?", pubKeys.Pub)
+
+					if clientDbEntry.ID == 0 {
+						db.Create(&Client{PubKey: pubKeys.Pub, Username: pubKeys.Pub})
+					}
+
+					// finally we respond to the websocket request
+					conn.WriteMessage(msgType, response)
+				} else {
+					print("Invalid signature.")
+					conn.Close()
 				}
-				conn.WriteMessage(msgType, response)
+
 			case "version":
-				response, err := createMessage(message.Type, version)
-				if err != nil {
-					log.Fatal("Programmer error!")
-					continue
+				// first we read the client's version
+				var clientVersion VersionMessage
+				json.Unmarshal(msg, &clientVersion)
+
+				clientPublicKey, _ := hex.DecodeString(clientVersion.PubKey)
+				signature, _ := hex.DecodeString(clientVersion.Data.Signed)
+
+				if ed25519.Verify(clientPublicKey, []byte(clientVersion.Data.Version), signature) {
+					// next we construct our own VersionMessage in reply
+					var versionMessage VersionMessage
+					versionMessage.Type = "version"
+					versionMessage.Data.Version = version
+					versionMessage.Data.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(version)))
+
+					response, err := createVersionMessage(message.Type, hex.EncodeToString(keys.Pub), versionMessage.Data)
+					if err != nil {
+						log.Fatal("Programmer error!")
+						continue
+					}
+
+					// finally we respond to the websocket request
+					conn.WriteMessage(msgType, response)
+				} else {
+					fmt.Println("Invalid signature.")
+					conn.Close()
 				}
-				conn.WriteMessage(msgType, response)
+
 			default:
 				fmt.Println("Unsupported " + message.Type + " message received.")
 			}
