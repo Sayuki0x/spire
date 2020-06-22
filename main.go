@@ -154,17 +154,19 @@ func generateKeys() KeyPair {
 
 func readBytesFromFile(filename string) []byte {
 	// Open file for reading
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Fatal(err)
+	file, openErr := os.Open(filename)
+	if openErr != nil {
+		log.Fatal(openErr)
 	}
 
-	data, err := ioutil.ReadAll(file)
-	if err != nil {
-		log.Fatal(err)
+	data, readErr := ioutil.ReadAll(file)
+	if readErr != nil {
+		log.Fatal(readErr)
 	}
 
-	return data
+	bytes, _ := hex.DecodeString(string(data))
+
+	return bytes
 }
 
 func writeBytesToFile(filename string, bytes []byte) bool {
@@ -174,7 +176,7 @@ func writeBytesToFile(filename string, bytes []byte) bool {
 		log.Fatal(openErr)
 		return false
 	}
-	file.Write(bytes)
+	file.Write([]byte(hex.EncodeToString(bytes)))
 	syncErr := file.Sync()
 	if syncErr != nil {
 		log.Fatal(syncErr)
@@ -311,13 +313,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 
 				if ed25519.Verify(clientPublicKey, []byte(clientVersion.Data.Version), signature) {
 					// first we check if user exists in database
-
-					fmt.Println(clientVersion.PubKey)
-
 					var clientDbEntry Client
 					db.First(&clientDbEntry, "pub_key = ?", clientVersion.PubKey)
-
-					fmt.Println(clientDbEntry)
 
 					// if they're not present, they need to register first
 					if clientDbEntry.ID == 0 {
