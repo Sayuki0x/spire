@@ -27,57 +27,29 @@ type Client struct {
 	PubKey   string
 	Username string
 	UUID     uuid.UUID
-	Signed   string
 }
 
 // Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
-	Type   string `json:"type"`
-	PubKey string `json:"pubKey"`
+	Type string `json:"type"`
 }
 
-// RegisterMessage is a type for authorization websocket messages that pass to and from server and client.
-type RegisterMessage struct {
-	Type   string  `json:"type"`
-	PubKey string  `json:"pubKey"`
-	Data   PubKeys `json:"data"`
-}
-
-// VersionMessage is a type for version websocket messages that pass to and from server and client.
-type VersionMessage struct {
-	Type   string      `json:"type"`
-	PubKey string      `json:"pubKey"`
-	Data   VersionData `json:"data"`
+type IdentityMessage struct {
+	Type   string    `json:"type"`
+	Method string    `json:"method"`
+	UUID   uuid.UUID `json:"uuid"`
 }
 
 type ErrorMessage struct {
-	Type   string `json:"type"`
-	PubKey string `json:"pubKey"`
-	Data   string `json:"data"`
-}
-
-type UserMessage struct {
-	Type   string `json:"type"`
-	PubKey string `json:"pubKey"`
-	Data   Client `json:"data"`
+	Type    string `json:"type"`
+	Message string `json:"data"`
+	Error   error  `json:"error"`
 }
 
 // KeyPair is a type that contains a public and private ed25519 key.
 type KeyPair struct {
-	Pub    ed25519.PublicKey
-	Priv   ed25519.PrivateKey
-	Signed []byte
-}
-
-type VersionData struct {
-	Version string
-	Signed  string
-}
-
-// PubKeys is a type that contains only public keys, as hex encoded strings.
-type PubKeys struct {
-	Pub    string
-	Signed string
+	Pub  ed25519.PublicKey
+	Priv ed25519.PrivateKey
 }
 
 // App is the main app.
@@ -104,6 +76,19 @@ func printAscii(log *logging.Logger) {
 	log.Info("All Rights Reserved © 2020 ExtraHash")
 }
 
+func checkConfig(log *logging.Logger) {
+	_, configErr := os.Stat("config")
+	if os.IsNotExist(configErr) {
+		log.Debug("Creating configuration folder.")
+		os.Mkdir("config", 0700)
+	}
+	_, pubKeyErr := os.Stat("config/key.pub")
+	_, privKeyErr := os.Stat("config/key.priv")
+	if os.IsNotExist(privKeyErr) && os.IsNotExist(pubKeyErr) {
+		createKeyFiles(log)
+	}
+}
+
 func createKeyFiles(log *logging.Logger) {
 	log.Debug("Creating keyfiles.")
 	_, pubKeyErr := os.Stat("config/key.pub")
@@ -119,19 +104,6 @@ func createKeyFiles(log *logging.Logger) {
 
 	writeBytesToFile("config/key.pub", keys.Pub, log)
 	writeBytesToFile("config/key.priv", keys.Priv, log)
-}
-
-func checkConfig(log *logging.Logger) {
-	_, configErr := os.Stat("config")
-	if os.IsNotExist(configErr) {
-		log.Debug("Creating configuration folder.")
-		os.Mkdir("config", 0700)
-	}
-	_, pubKeyErr := os.Stat("config/key.pub")
-	_, privKeyErr := os.Stat("config/key.priv")
-	if os.IsNotExist(privKeyErr) && os.IsNotExist(pubKeyErr) {
-		createKeyFiles(log)
-	}
 }
 
 func checkKeys(log *logging.Logger) KeyPair {
@@ -237,65 +209,6 @@ func main() {
 	a.Run(":8000")
 }
 
-func createErrorMessage(Type string, pubKey string, Data string) ([]byte, error) {
-	var response ErrorMessage
-
-	response.Type = Type
-	response.Data = Data
-	response.PubKey = pubKey
-
-	byteResponse, err := json.Marshal(response)
-	if err != nil {
-		log.Fatal("Programmer error!")
-	}
-
-	return byteResponse, err
-}
-
-func createUserMessage(Type string, pubKey string, userData Client) ([]byte, error) {
-	var userDetails UserMessage
-	userDetails.Type = "user"
-	userDetails.PubKey = pubKey
-	userDetails.Data = userData
-
-	byteResponse, err := json.Marshal(userDetails)
-	if err != nil {
-		log.Fatal("Programmer error!")
-	}
-
-	return byteResponse, err
-}
-
-func createVersionMessage(Type string, pubKey string, Data VersionData) ([]byte, error) {
-	var response VersionMessage
-
-	response.Type = Type
-	response.Data = Data
-	response.PubKey = pubKey
-
-	byteResponse, err := json.Marshal(response)
-	if err != nil {
-		log.Fatal("Programmer error!")
-	}
-
-	return byteResponse, err
-}
-
-func createRegisterMessage(Type string, pubKey string, Data PubKeys) ([]byte, error) {
-	var response RegisterMessage
-
-	response.Type = Type
-	response.Data = Data
-	response.PubKey = pubKey
-
-	byteResponse, err := json.Marshal(response)
-	if err != nil {
-		log.Fatal("Programmer error!")
-	}
-
-	return byteResponse, err
-}
-
 // SocketHandler handles the websocket connection messages and responses.
 func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -328,122 +241,21 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 			log.Debug("IN ", string(msg))
 
+			/* ed25519.Verify(clientKeyPair.Pub, clientKeyPair.Pub, clientKeyPair.Signed) */
 			switch message.Type {
-			// mutates the user
-			case "user":
-				var userMessage UserMessage
-				json.Unmarshal(msg, &userMessage)
+			case "identity":
+				var identityMessage IdentityMessage
+				json.Unmarshal(msg, &identityMessage)
 
-				var clientKeyPair KeyPair
-				clientKeyPair.Pub, _ = hex.DecodeString(userMessage.PubKey)
-				clientKeyPair.Signed, _ = hex.DecodeString(userMessage.Data.Signed)
-
-				if ed25519.Verify(clientKeyPair.Pub, clientKeyPair.Pub, clientKeyPair.Signed) {
-					var currentUserEntry Client
-					db.First(&currentUserEntry, "pub_key = ?", userMessage.PubKey)
-
-					if currentUserEntry.ID == 0 {
-						log.Warning("User doesn't seem to exist with pubkey " + userMessage.PubKey)
-						break
-					} else {
-						currentUserEntry.Username = userMessage.Data.Username
-						db.Save(&currentUserEntry)
-					}
-					log.Debug("User updated " + userMessage.Data.UUID.String())
-				} else {
-					log.Warning("Invalid signature.")
-					conn.Close()
-				}
-			// exchanges identities
-			case "register":
-				// first we parse the client's auth json
-				var registerMessage RegisterMessage
-				json.Unmarshal(msg, &registerMessage)
-
-				var clientKeyPair KeyPair
-				clientKeyPair.Pub, _ = hex.DecodeString(registerMessage.Data.Pub)
-				clientKeyPair.Signed, _ = hex.DecodeString(registerMessage.Data.Signed)
-
-				// if signature verifies
-				if ed25519.Verify(clientKeyPair.Pub, clientKeyPair.Pub, clientKeyPair.Signed) {
-					log.Notice("Client validated as " + registerMessage.Data.Pub)
-					// then we construct our own RegisterMessage in reply
-					var pubKeys PubKeys
-					pubKeys.Pub = hex.EncodeToString(keys.Pub)
-					pubKeys.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, keys.Pub))
-					response, err := createRegisterMessage(message.Type, hex.EncodeToString(keys.Pub), pubKeys)
+				if identityMessage.Method == "CREATE" {
+					identityMessage.UUID = uuid.NewV4()
+					byteResponse, err := json.Marshal(identityMessage)
 					if err != nil {
-						log.Fatal("Programmer error!")
-						continue
+
+						log.Fatal(err)
 					}
-
-					var clientDbEntry Client
-					db.First(&clientDbEntry, "pub_key = ?", registerMessage.Data.Pub)
-
-					// save the pubkey in db if not present
-					if clientDbEntry.ID == 0 {
-						clientUuid := uuid.NewV4()
-						db.Create(&Client{PubKey: registerMessage.Data.Pub, UUID: clientUuid, Username: "Anonymous"})
-					}
-
-					// finally we respond to the websocket request
-					log.Debug("OUT", string(response))
-					conn.WriteMessage(msgType, response)
-
-					userMessage, userError := createUserMessage(message.Type, hex.EncodeToString(keys.Pub), clientDbEntry)
-					if userError != nil {
-						log.Fatal("Programmer error!")
-						continue
-					}
-					conn.WriteMessage(msgType, userMessage)
-
-				} else {
-					log.Warning("Invalid signature.")
-					conn.Close()
-				}
-			// exchanges versions
-			case "version":
-				// first we read the client's version
-				var clientVersion VersionMessage
-				json.Unmarshal(msg, &clientVersion)
-
-				clientPublicKey, _ := hex.DecodeString(clientVersion.PubKey)
-				signature, _ := hex.DecodeString(clientVersion.Data.Signed)
-
-				if ed25519.Verify(clientPublicKey, []byte(clientVersion.Data.Version), signature) {
-					// first we check if user exists in database
-					var clientDbEntry Client
-					db.First(&clientDbEntry, "pub_key = ?", clientVersion.PubKey)
-
-					// if they're not present, they need to register first
-					if clientDbEntry.ID == 0 {
-						log.Warning("User is not registered.")
-						response, err := createErrorMessage("error", hex.EncodeToString(keys.Pub), "You need to register first.")
-						log.Debug("OUT", string(response))
-						if err != nil {
-							log.Fatal("Programmer error!")
-							continue
-						}
-						conn.WriteMessage(msgType, response)
-					} else {
-						// next we construct our own VersionMessage in reply
-						var versionData VersionData
-						versionData.Version = version
-						versionData.Signed = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(version)))
-
-						response, err := createVersionMessage("version", hex.EncodeToString(keys.Pub), versionData)
-						if err != nil {
-							log.Fatal("Programmer error!")
-							continue
-						}
-
-						// finally we respond to the websocket request
-						log.Debug("OUT", string(response))
-						conn.WriteMessage(msgType, response)
-					}
-				} else {
-					log.Warning("Invalid signature.")
-					conn.Close()
+					db.Create(&Client{UUID: identityMessage.UUID, Username: "Anonymous"})
+					conn.WriteMessage(msgType, byteResponse)
 				}
 			// catchall
 			default:
