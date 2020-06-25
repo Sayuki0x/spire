@@ -34,15 +34,44 @@ type Message struct {
 	Type string `json:"type"`
 }
 
+type ChallengeSub struct {
+	PubKey    string
+	MessageID uuid.UUID
+}
+
+type ChallengeMessage struct {
+	Type      string    `json:"type"`
+	MessageID uuid.UUID `json:"messageID"`
+	PubKey    string    `json:"pubkey"`
+}
+
+type ChallengeResponse struct {
+	Type      string    `json:"type"`
+	MessageID uuid.UUID `json:"messageID"`
+	Response  string    `json:"response"`
+	PubKey    string    `json:"pubkey"`
+}
+
 type IdentityMessage struct {
-	Type   string    `json:"type"`
-	Method string    `json:"method"`
-	UUID   uuid.UUID `json:"uuid"`
+	Type      string    `json:"type"`
+	Method    string    `json:"method"`
+	PubKey    string    `json:"pubkey"`
+	UUID      uuid.UUID `json:"uuid"`
+	Signed    string    `json:"signed"`
+	MessageID uuid.UUID `json:"messageID"`
+}
+
+type IdentityResponse struct {
+	Method    string    `json:"method"`
+	Type      string    `json:"type"`
+	MessageID uuid.UUID `json:"messageID"`
+	UUID      uuid.UUID `json:"uuid"`
+	Status    string    `json:"status"`
 }
 
 type ErrorMessage struct {
 	Type    string `json:"type"`
-	Message string `json:"data"`
+	Message string `json:"message"`
 	Error   error  `json:"error"`
 }
 
@@ -141,7 +170,7 @@ func (a *App) Initialize() {
 	var keys = checkKeys(log)
 
 	// initialize database
-	db, err := gorm.Open("sqlite3", "vex.sqlite3")
+	db, err := gorm.Open("sqlite3", "vex-server.db")
 	if err != nil {
 		log.Error("Failed to connect to database.")
 		os.Exit(1)
@@ -223,8 +252,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 		conn, _ := upgrader.Upgrade(res, req, nil)
 		log.Notice("Incoming websocket connection.")
 
+		subscriptions := []ChallengeSub{}
+		authed := false
+
 		for {
 			msgType, msg, err := conn.ReadMessage()
+
+			if !authed {
+				// fmt.Println("User not yet authed.")
+			}
+
 			if err != nil {
 				log.Error(err)
 				return
@@ -234,28 +271,128 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			json.Unmarshal(msg, &message)
 
 			if message.Type == "" {
-				log.Warning("Invalid message, closing connection.")
-				conn.Close()
-				break
+				log.Warning("Invalid message: " + string(msg))
+				continue
 			}
 
 			log.Debug("IN ", string(msg))
 
-			/* ed25519.Verify(clientKeyPair.Pub, clientKeyPair.Pub, clientKeyPair.Signed) */
 			switch message.Type {
+			case "challengeRes":
+				var challengeResponse ChallengeResponse
+				json.Unmarshal(msg, &challengeResponse)
+
+				var clientKeys KeyPair
+				clientPubKey, _ := hex.DecodeString(challengeResponse.PubKey)
+				clientKeys.Pub = clientPubKey
+
+				for _, sub := range subscriptions {
+					if sub.PubKey == challengeResponse.PubKey {
+						challengeKey, _ := hex.DecodeString(sub.PubKey)
+						challengeSig, _ := hex.DecodeString(challengeResponse.Response)
+						if ed25519.Verify(challengeKey, []byte(sub.MessageID.String()), challengeSig) {
+							log.Notice("User authorized successfully.")
+							authed = true
+						}
+					}
+				}
+			case "challenge":
+				// respond to challenge
+				var challengeMessage ChallengeMessage
+				json.Unmarshal(msg, &challengeMessage)
+
+				var user Client
+				db.First(&user, "pub_key = ?", challengeMessage.PubKey)
+
+				if user.ID == 0 {
+					var challengeError ErrorMessage
+					challengeError.Type = "error"
+					challengeError.Message = "You need to register first!"
+
+					byteChallengeError, _ := json.Marshal(challengeError)
+					log.Debug("OUT", string(byteChallengeError))
+					conn.WriteMessage(msgType, byteChallengeError)
+					break
+				}
+
+				var challengeResponse ChallengeResponse
+				challengeResponse.Type = "challengeRes"
+				challengeResponse.MessageID = challengeMessage.MessageID
+				challengeResponse.Response = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(challengeMessage.MessageID.String())))
+				challengeResponse.PubKey = hex.EncodeToString(keys.Pub)
+
+				byteResponse, _ := json.Marshal(challengeResponse)
+				log.Debug("OUT", string(byteResponse))
+				conn.WriteMessage(msgType, byteResponse)
+
+				// challenge the client
+				var challengeToClient ChallengeMessage
+				challengeToClient.MessageID = uuid.NewV4()
+				challengeToClient.Type = "challenge"
+				challengeToClient.PubKey = hex.EncodeToString(keys.Pub)
+				byteChallenge, _ := json.Marshal(challengeToClient)
+
+				var challengeSub ChallengeSub
+				challengeSub.PubKey = challengeMessage.PubKey
+				challengeSub.MessageID = challengeToClient.MessageID
+
+				subscriptions = append(subscriptions, challengeSub)
+				log.Debug("OUT", string(byteChallenge))
+				conn.WriteMessage(msgType, byteChallenge)
 			case "identity":
 				var identityMessage IdentityMessage
 				json.Unmarshal(msg, &identityMessage)
 
 				if identityMessage.Method == "CREATE" {
-					identityMessage.UUID = uuid.NewV4()
-					byteResponse, err := json.Marshal(identityMessage)
+					var identityResponse IdentityResponse
+					identityResponse.Method = "CREATE"
+					identityResponse.Type = "identityCreateRes"
+					identityResponse.UUID = uuid.NewV4()
+					identityResponse.MessageID = identityMessage.MessageID
+					identityResponse.Status = "SUCCESS"
+					byteResponse, err := json.Marshal(identityResponse)
 					if err != nil {
-
 						log.Fatal(err)
 					}
-					db.Create(&Client{UUID: identityMessage.UUID, Username: "Anonymous"})
+					db.Create(&Client{UUID: identityResponse.UUID, Username: "Anonymous"})
+					log.Debug("OUT", string(byteResponse))
 					conn.WriteMessage(msgType, byteResponse)
+				}
+
+				if identityMessage.Method == "REGISTER" {
+					var clientKeyPair KeyPair
+					clientKeyPair.Pub, _ = hex.DecodeString(identityMessage.PubKey)
+					// signedUUID, _ := hex.DecodeString(identityMessage.Signed)
+
+					if /* ed25519.Verify(clientKeyPair.Pub, identityMessage.UUID.Bytes(), signedUUID) */ true {
+
+						var newClient Client
+						db.First(&newClient, "uuid = ?", identityMessage.UUID.String())
+
+						if newClient.ID == 0 {
+							log.Warning("UUID does not exist in database.")
+							continue
+						}
+
+						if newClient.PubKey != "" {
+							log.Warning("User already registered.")
+						} else {
+							db.Model(&newClient).Update("PubKey", identityMessage.PubKey)
+							var idResponse IdentityResponse
+							idResponse.Type = "identityRegisterRes"
+							idResponse.Method = "register"
+							idResponse.MessageID = identityMessage.MessageID
+							idResponse.Status = "SUCCESS"
+							idResponse.UUID = identityMessage.UUID
+
+							byteResponse, _ := json.Marshal(idResponse)
+
+							log.Debug("OUT", string(byteResponse))
+							conn.WriteMessage(msgType, byteResponse)
+						}
+					} else {
+						log.Warning("Signature not verified.")
+					}
 				}
 			// catchall
 			default:
