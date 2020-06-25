@@ -29,6 +29,13 @@ type Client struct {
 	UUID     uuid.UUID
 }
 
+type Channel struct {
+	gorm.Model
+	ID     uuid.UUID
+	admin  uuid.UUID
+	public bool
+}
+
 // Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
 	Type string `json:"type"`
@@ -278,6 +285,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			log.Debug("IN ", string(msg))
 
 			switch message.Type {
+			case "channels":
+
 			case "challengeRes":
 				var challengeResponse ChallengeResponse
 				json.Unmarshal(msg, &challengeResponse)
@@ -362,10 +371,9 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				if identityMessage.Method == "REGISTER" {
 					var clientKeyPair KeyPair
 					clientKeyPair.Pub, _ = hex.DecodeString(identityMessage.PubKey)
-					// signedUUID, _ := hex.DecodeString(identityMessage.Signed)
+					sig, _ := hex.DecodeString(identityMessage.Signed)
 
-					if /* ed25519.Verify(clientKeyPair.Pub, identityMessage.UUID.Bytes(), signedUUID) */ true {
-
+					if ed25519.Verify(clientKeyPair.Pub, []byte(identityMessage.UUID.String()), sig) {
 						var newClient Client
 						db.First(&newClient, "uuid = ?", identityMessage.UUID.String())
 
