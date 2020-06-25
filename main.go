@@ -31,9 +31,30 @@ type Client struct {
 
 type Channel struct {
 	gorm.Model
-	ID     uuid.UUID
-	admin  uuid.UUID
-	public bool
+	ChannelID uuid.UUID
+	Admin     uuid.UUID
+	Public    bool
+	Name      string
+}
+
+type ChannelMessage struct {
+	Type      string    `json:"type"`
+	Method    string    `json:"method"`
+	ChannelID uuid.UUID `json:"channelID"`
+}
+
+type ChannelResponse struct {
+	Type      string    `json:"type"`
+	Method    string    `json:"method"`
+	Status    string    `json:"status"`
+	ChannelID uuid.UUID `json:"id"`
+}
+
+type ChannelList struct {
+	Type     string    `json:"type"`
+	Method   string    `json:"method"`
+	Status   string    `json:"status"`
+	Channels []Channel `json:"channels"`
 }
 
 // Message is a type for websocket messages that pass to and from server and client.
@@ -82,7 +103,7 @@ type ErrorMessage struct {
 	Error   error  `json:"error"`
 }
 
-// KeyPair is a type that contains a public and private ed25519 key.
+// KeyPair is a type that contains a Public and private ed25519 key.
 type KeyPair struct {
 	Pub  ed25519.PublicKey
 	Priv ed25519.PrivateKey
@@ -154,7 +175,7 @@ func checkKeys(log *logging.Logger) KeyPair {
 	keys.Pub = readBytesFromFile("config/key.pub", log)
 	keys.Priv = readBytesFromFile("config/key.priv", log)
 
-	log.Info("Server public key " + hex.EncodeToString(keys.Pub))
+	log.Info("Server Public key " + hex.EncodeToString(keys.Pub))
 
 	return keys
 }
@@ -183,6 +204,7 @@ func (a *App) Initialize() {
 		os.Exit(1)
 	}
 	db.AutoMigrate(&Client{})
+	db.AutoMigrate(&Channel{})
 	a.Db = db
 
 	// initialize router
@@ -261,9 +283,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 		subscriptions := []ChallengeSub{}
 		authed := false
+		var clientInfo Client
+
+		// joinedChannels := []uuid.UUID{}
 
 		for {
-			msgType, msg, err := conn.ReadMessage()
+			_, msg, err := conn.ReadMessage()
 
 			if !authed {
 				// fmt.Println("User not yet authed.")
@@ -285,7 +310,48 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			log.Debug("IN ", string(msg))
 
 			switch message.Type {
-			case "channels":
+			case "channel":
+				if !authed {
+					log.Warning("Not authorized!")
+					break
+				}
+
+				var channelMessage ChannelMessage
+				json.Unmarshal(msg, &channelMessage)
+
+				if channelMessage.Method == "CREATE" {
+					var newChannel Channel
+					newChannel.ChannelID = uuid.NewV4()
+					newChannel.Admin = clientInfo.UUID
+					newChannel.Public = true
+
+					db.Create(&newChannel)
+
+					var channelRes ChannelResponse
+					channelRes.Type = "channelCreateRes"
+					channelRes.Method = "CREATE"
+					channelRes.Status = "SUCCESS"
+					channelRes.ChannelID = newChannel.ChannelID
+
+					log.Debug("OUT", channelRes)
+					conn.WriteJSON(channelRes)
+				}
+
+				if channelMessage.Method == "RETRIEVE" {
+					channels := []Channel{}
+
+					db.Where("public = ?", true).Find(&channels)
+
+					var channelList ChannelList
+
+					channelList.Type = "channelListResponse"
+					channelList.Status = "SUCCESS"
+					channelList.Method = "RETRIEVE"
+					channelList.Channels = channels
+
+					fmt.Println("OUT", channelList)
+					conn.WriteJSON(channelList)
+				}
 
 			case "challengeRes":
 				var challengeResponse ChallengeResponse
@@ -317,37 +383,35 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					var challengeError ErrorMessage
 					challengeError.Type = "error"
 					challengeError.Message = "You need to register first!"
-
-					byteChallengeError, _ := json.Marshal(challengeError)
-					log.Debug("OUT", string(byteChallengeError))
-					conn.WriteMessage(msgType, byteChallengeError)
+					log.Debug("OUT", challengeError)
+					conn.WriteJSON(challengeError)
 					break
 				}
+
+				clientInfo = user
 
 				var challengeResponse ChallengeResponse
 				challengeResponse.Type = "challengeRes"
 				challengeResponse.MessageID = challengeMessage.MessageID
 				challengeResponse.Response = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(challengeMessage.MessageID.String())))
 				challengeResponse.PubKey = hex.EncodeToString(keys.Pub)
-
-				byteResponse, _ := json.Marshal(challengeResponse)
-				log.Debug("OUT", string(byteResponse))
-				conn.WriteMessage(msgType, byteResponse)
+				log.Debug("OUT", challengeResponse)
+				conn.WriteJSON(challengeResponse)
 
 				// challenge the client
 				var challengeToClient ChallengeMessage
 				challengeToClient.MessageID = uuid.NewV4()
 				challengeToClient.Type = "challenge"
 				challengeToClient.PubKey = hex.EncodeToString(keys.Pub)
-				byteChallenge, _ := json.Marshal(challengeToClient)
 
 				var challengeSub ChallengeSub
 				challengeSub.PubKey = challengeMessage.PubKey
 				challengeSub.MessageID = challengeToClient.MessageID
 
 				subscriptions = append(subscriptions, challengeSub)
-				log.Debug("OUT", string(byteChallenge))
-				conn.WriteMessage(msgType, byteChallenge)
+
+				log.Debug("OUT", challengeToClient)
+				conn.WriteJSON(challengeToClient)
 			case "identity":
 				var identityMessage IdentityMessage
 				json.Unmarshal(msg, &identityMessage)
@@ -359,13 +423,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					identityResponse.UUID = uuid.NewV4()
 					identityResponse.MessageID = identityMessage.MessageID
 					identityResponse.Status = "SUCCESS"
-					byteResponse, err := json.Marshal(identityResponse)
-					if err != nil {
-						log.Fatal(err)
-					}
+
 					db.Create(&Client{UUID: identityResponse.UUID, Username: "Anonymous"})
-					log.Debug("OUT", string(byteResponse))
-					conn.WriteMessage(msgType, byteResponse)
+					log.Debug("OUT", identityResponse)
+					conn.WriteJSON(identityResponse)
 				}
 
 				if identityMessage.Method == "REGISTER" {
@@ -393,10 +454,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							idResponse.Status = "SUCCESS"
 							idResponse.UUID = identityMessage.UUID
 
-							byteResponse, _ := json.Marshal(idResponse)
-
-							log.Debug("OUT", string(byteResponse))
-							conn.WriteMessage(msgType, byteResponse)
+							log.Debug("OUT", idResponse)
+							conn.WriteJSON(idResponse)
 						}
 					} else {
 						log.Warning("Signature not verified.")
