@@ -538,6 +538,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 // Run starts the http server.
 func (a *App) Run(addr string) {
-	http.ListenAndServe(addr, a.Router)
+	err := http.ListenAndServe(addr, a.Router)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	a.Log.Info("API listening on " + addr)
 }
