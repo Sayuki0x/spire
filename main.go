@@ -22,6 +22,14 @@ import (
 
 const version string = "v0.1.0"
 
+type ChatMessage struct {
+	MessageID uuid.UUID `json:"messageID"`
+	Method    string    `json:"method"`
+	Message   string    `json:"message"`
+	ChannelID uuid.UUID `json:"channelID"`
+	Type      string    `json:"type"`
+}
+
 type Client struct {
 	gorm.Model
 	PubKey   string
@@ -31,35 +39,45 @@ type Client struct {
 
 type Channel struct {
 	gorm.Model
-	ChannelID uuid.UUID
-	Admin     uuid.UUID
-	Public    bool
-	Name      string
+	ChannelID uuid.UUID `json:"channelID"`
+	Admin     uuid.UUID `json:"admin"`
+	Public    bool      `json:"public"`
+	Name      string    `json:"name"`
 }
 
 type ChannelMessage struct {
 	Type      string    `json:"type"`
 	Method    string    `json:"method"`
 	ChannelID uuid.UUID `json:"channelID"`
+	MessageID uuid.UUID `json:"messageID"`
+	Name      string    `json:"name"`
 }
 
 type ChannelResponse struct {
 	Type      string    `json:"type"`
 	Method    string    `json:"method"`
 	Status    string    `json:"status"`
-	ChannelID uuid.UUID `json:"id"`
+	ChannelID uuid.UUID `json:"channelID"`
+	Name      string    `json:"name"`
 }
 
 type ChannelList struct {
-	Type     string    `json:"type"`
-	Method   string    `json:"method"`
-	Status   string    `json:"status"`
-	Channels []Channel `json:"channels"`
+	MessageID uuid.UUID `json:"messageID"`
+	Type      string    `json:"type"`
+	Method    string    `json:"method"`
+	Status    string    `json:"status"`
+	Channels  []Channel `json:"channels"`
 }
 
 // Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
 	Type string `json:"type"`
+}
+
+type ChannelSub struct {
+	ClientID   uuid.UUID
+	ChannelID  uuid.UUID
+	Connection *websocket.Conn
 }
 
 type ChallengeSub struct {
@@ -281,7 +299,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 		conn, _ := upgrader.Upgrade(res, req, nil)
 		log.Notice("Incoming websocket connection.")
 
-		subscriptions := []ChallengeSub{}
+		wsClients := []*websocket.Conn{}
+
+		challengeSubscriptions := []ChallengeSub{}
+		channelSubscriptions := []ChannelSub{}
+
 		authed := false
 		var clientInfo Client
 
@@ -289,10 +311,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 		for {
 			_, msg, err := conn.ReadMessage()
-
-			if !authed {
-				// fmt.Println("User not yet authed.")
-			}
 
 			if err != nil {
 				log.Error(err)
@@ -310,6 +328,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			log.Debug("IN ", string(msg))
 
 			switch message.Type {
+			case "chat":
+				for _, conn := range wsClients {
+					var chatMessage ChatMessage
+					json.Unmarshal(msg, &chatMessage)
+
+					conn.WriteJSON(chatMessage)
+				}
 			case "channel":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -324,6 +349,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					newChannel.ChannelID = uuid.NewV4()
 					newChannel.Admin = clientInfo.UUID
 					newChannel.Public = true
+					newChannel.Name = channelMessage.Name
 
 					db.Create(&newChannel)
 
@@ -332,6 +358,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					channelRes.Method = "CREATE"
 					channelRes.Status = "SUCCESS"
 					channelRes.ChannelID = newChannel.ChannelID
+					channelRes.Name = newChannel.Name
 
 					log.Debug("OUT", channelRes)
 					conn.WriteJSON(channelRes)
@@ -344,6 +371,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					var channelList ChannelList
 
+					channelList.MessageID = channelMessage.MessageID
 					channelList.Type = "channelListResponse"
 					channelList.Status = "SUCCESS"
 					channelList.Method = "RETRIEVE"
@@ -351,6 +379,44 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					fmt.Println("OUT", channelList)
 					conn.WriteJSON(channelList)
+				}
+
+				if channelMessage.Method == "JOIN" {
+
+					var requestedChannel Channel
+					db.First(&requestedChannel, "channel_id = ?", channelMessage.ChannelID.String())
+
+					if requestedChannel.ID == 0 {
+						log.Warning("Client attempted subscription to nonexistant channel id " + requestedChannel.ChannelID.String())
+						break
+					}
+
+					var newSub ChannelSub
+					newSub.ClientID = clientInfo.UUID
+					newSub.ChannelID = requestedChannel.ChannelID
+					newSub.Connection = conn
+
+					duplicate := false
+
+					for _, sub := range channelSubscriptions {
+						if sub.ChannelID == newSub.ChannelID && sub.ClientID == newSub.ClientID && sub.Connection == newSub.Connection {
+							duplicate = true
+						}
+					}
+
+					if !duplicate {
+						channelSubscriptions = append(channelSubscriptions, newSub)
+					}
+
+					var chanRes ChannelResponse
+					chanRes.ChannelID = requestedChannel.ChannelID
+					chanRes.Method = channelMessage.Method
+					chanRes.Name = requestedChannel.Name
+					chanRes.Status = "SUCCESS"
+					chanRes.Type = "channelJoinRes"
+
+					log.Debug("OUT", chanRes)
+					conn.WriteJSON(chanRes)
 				}
 
 			case "challengeRes":
@@ -361,13 +427,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				clientPubKey, _ := hex.DecodeString(challengeResponse.PubKey)
 				clientKeys.Pub = clientPubKey
 
-				for _, sub := range subscriptions {
+				for _, sub := range challengeSubscriptions {
 					if sub.PubKey == challengeResponse.PubKey {
 						challengeKey, _ := hex.DecodeString(sub.PubKey)
 						challengeSig, _ := hex.DecodeString(challengeResponse.Response)
 						if ed25519.Verify(challengeKey, []byte(sub.MessageID.String()), challengeSig) {
 							log.Notice("User authorized successfully.")
 							authed = true
+							wsClients = append(wsClients, conn)
 						}
 					}
 				}
@@ -408,7 +475,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				challengeSub.PubKey = challengeMessage.PubKey
 				challengeSub.MessageID = challengeToClient.MessageID
 
-				subscriptions = append(subscriptions, challengeSub)
+				challengeSubscriptions = append(challengeSubscriptions, challengeSub)
 
 				log.Debug("OUT", challengeToClient)
 				conn.WriteJSON(challengeToClient)
