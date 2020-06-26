@@ -377,7 +377,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					channelList.Method = "RETRIEVE"
 					channelList.Channels = channels
 
-					fmt.Println("OUT", channelList)
+					log.Debug("OUT", channelList)
 					conn.WriteJSON(channelList)
 				}
 
@@ -435,7 +435,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							log.Notice("User authorized successfully.")
 							authed = true
 							wsClients = append(wsClients, conn)
-							fmt.Println(wsClients)
 						}
 					}
 				}
@@ -540,4 +539,5 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 // Run starts the http server.
 func (a *App) Run(addr string) {
 	http.ListenAndServe(addr, a.Router)
+	a.Log.Info("API listening on " + addr)
 }
