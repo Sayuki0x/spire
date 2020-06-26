@@ -435,6 +435,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							log.Notice("User authorized successfully.")
 							authed = true
 							wsClients = append(wsClients, conn)
+							fmt.Println(wsClients)
 						}
 					}
 				}
