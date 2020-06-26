@@ -20,6 +20,8 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
+var channelSubscriptions = []ChannelSub{}
+
 const version string = "v0.1.0"
 
 type ChatMessage struct {
@@ -288,7 +290,7 @@ func main() {
 // SocketHandler handles the websocket connection messages and responses.
 func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
+		wsClients := []*websocket.Conn{}
 		var upgrader = websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -298,8 +300,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 		conn, _ := upgrader.Upgrade(res, req, nil)
 		log.Notice("Incoming websocket connection.")
-
-		wsClients := []*websocket.Conn{}
 
 		challengeSubscriptions := []ChallengeSub{}
 		channelSubscriptions := []ChannelSub{}
