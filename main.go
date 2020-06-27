@@ -31,6 +31,13 @@ type WelcomeMessage struct {
 	Message   string    `json:"message"`
 }
 
+type HistoryReqMessage struct {
+	Type       string    `json:"type"`
+	MessageID  uuid.UUID `json:"messageID"`
+	Method     string    `json:"method"`
+	TopMessage uuid.UUID `json:"topMessage"`
+}
+
 type ChatMessage struct {
 	gorm.Model
 	UserID    uuid.UUID `json:"userID"`
@@ -96,6 +103,12 @@ type UserMessage struct {
 // Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
 	Type string `json:"type"`
+}
+
+type SuccessMessage struct {
+	Type      string    `json:"type"`
+	MessageID uuid.UUID `json:"messageID"`
+	Status    string    `json:"status"`
 }
 
 type ChannelSub struct {
@@ -310,14 +323,6 @@ func main() {
 	a.Run(":8000")
 }
 
-func reverse(history []ChatMessage) []ChatMessage {
-	for i := 0; i < len(history)/2; i++ {
-		j := len(history) - i - 1
-		history[i], history[j] = history[j], history[i]
-	}
-	return history
-}
-
 // SocketHandler handles the websocket connection messages and responses.
 func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -347,18 +352,19 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				// broadcast the join message
 				var userLeaveMsg ChatMessage
+
+				db.Create(&userLeaveMsg)
 				userLeaveMsg.Type = "chat"
 				userLeaveMsg.MessageID = uuid.NewV4()
 				userLeaveMsg.Method = "CREATE"
 				userLeaveMsg.Type = "chat"
 				userLeaveMsg.Username = "Server Message"
 				userLeaveMsg.Message = clientInfo.Username + " has just left the channel."
+				db.Save(&userLeaveMsg)
 
 				for _, client := range wsClients {
 					client.WriteJSON(userLeaveMsg)
 				}
-
-				db.Create(&userLeaveMsg)
 
 				return
 			}
@@ -386,11 +392,25 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				if userMessage.Method == "UPDATE" {
 					oldUsername := clientInfo.Username
+
+					if len(userMessage.Username) > 12 {
+						nickError := ErrorMessage{
+							Type:    "error",
+							Message: "The max username length is 12 characters.",
+						}
+
+						conn.WriteJSON(nickError)
+						break
+					}
+
 					db.Model(&clientInfo).Update("username", userMessage.Username)
 					clientInfo.Username = userMessage.Username
 
 					// broadcast the nick change message
 					var userNickChgMsg ChatMessage
+
+					db.Create(&userNickChgMsg)
+
 					userNickChgMsg.Type = "chat"
 					userNickChgMsg.MessageID = uuid.NewV4()
 					userNickChgMsg.Method = "CREATE"
@@ -398,13 +418,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					userNickChgMsg.Username = "Server Message"
 					userNickChgMsg.Message = oldUsername + " changed their nickname to " + userMessage.Username
 
+					db.Save(&userNickChgMsg)
+
 					for _, client := range wsClients {
 						client.WriteJSON(userNickChgMsg)
 					}
 
-					db.Create(&userNickChgMsg)
 				}
-
 			case "chat":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -413,16 +433,20 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 				var chatMessage ChatMessage
 				json.Unmarshal(msg, &chatMessage)
+
+				db.Create(&chatMessage)
+
 				chatMessage.UserID = clientInfo.UUID
 				chatMessage.MessageID = uuid.NewV4()
 				chatMessage.Username = clientInfo.Username
+
+				db.Save(&chatMessage)
+
 				log.Debug("BROADCAST", chatMessage)
 
 				for _, client := range wsClients {
 					client.WriteJSON(chatMessage)
 				}
-
-				db.Create(&chatMessage)
 
 			case "channel":
 				if !authed {
@@ -527,9 +551,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							}
 							conn.WriteJSON(authResult)
 
-							// append to authed client list
-							wsClients = append(wsClients, conn)
-
 							// send server welcome message
 							welcomeMessage := WelcomeMessage{
 								MessageID: uuid.NewV4(),
@@ -538,31 +559,60 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							}
 							conn.WriteJSON(welcomeMessage)
 
-							// retrieve history and send to client
-							messages := []ChatMessage{}
-							db.Order("created_at desc").Not("user_id", serverUserID).Limit(15).Find(&messages)
-
-							for _, msg := range reverse(messages) {
-								conn.WriteJSON(msg)
-							}
-
 							// broadcast the join message
 							var userJoinEventMsg ChatMessage
+
+							db.Create(&userJoinEventMsg)
 							userJoinEventMsg.Type = "chat"
 							userJoinEventMsg.MessageID = uuid.NewV4()
 							userJoinEventMsg.Method = "CREATE"
 							userJoinEventMsg.Type = "chat"
 							userJoinEventMsg.Username = "Server Message"
 							userJoinEventMsg.Message = clientInfo.Username + " has just joined the channel."
+							db.Save(&userJoinEventMsg)
 
 							for _, client := range wsClients {
 								client.WriteJSON(userJoinEventMsg)
 							}
 
-							db.Create(&userJoinEventMsg)
+							// append to authed client list
+							wsClients = append(wsClients, conn)
+
 						}
 					}
 				}
+			case "historyReq":
+				var historyReq HistoryReqMessage
+				json.Unmarshal(msg, &historyReq)
+
+				log.Notice("History Request from message " + historyReq.TopMessage.String())
+				log.Notice(historyReq)
+
+				var topMessage ChatMessage
+				db.First(&topMessage, "message_id = ?", historyReq.TopMessage)
+
+				log.Notice("Found message at ID:")
+				log.Notice(topMessage.ID)
+
+				// retrieve history and send to client
+				messages := []ChatMessage{}
+				db.Where("id > ?", topMessage.ID).Find(&messages)
+
+				log.Notice("Sending back messages of length")
+				log.Notice(len(messages))
+
+				for _, msg := range messages {
+					conn.WriteJSON(msg)
+				}
+
+				successMsg := SuccessMessage{
+					Type:      "historyReqRes",
+					MessageID: historyReq.MessageID,
+					Status:    "SUCCESS",
+				}
+
+				conn.WriteJSON(successMsg)
+
 			case "challenge":
 				// respond to challenge
 				var challengeMessage ChallengeMessage
