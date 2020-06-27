@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"golang.org/x/crypto/ed25519"
 
@@ -328,6 +329,15 @@ func main() {
 	a.Run(":8000")
 }
 
+func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
+	timer := time.NewTimer(3 * time.Second)
+	<-timer.C
+
+	if !*authed {
+		conn.Close()
+	}
+}
+
 // SocketHandler handles the websocket connection messages and responses.
 func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -346,6 +356,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 		channelSubscriptions := []ChannelSub{}
 
 		authed := false
+		go killUnauthedConnection(&authed, conn)
 
 		var clientInfo Client
 
