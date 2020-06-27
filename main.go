@@ -449,7 +449,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Type:      "welcomeMessage",
 								Message:   "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
 							}
-
 							conn.WriteJSON(welcomeMessage)
 						}
 					}
