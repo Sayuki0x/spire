@@ -31,7 +31,9 @@ type WelcomeMessage struct {
 }
 
 type ChatMessage struct {
+	gorm.Model
 	UserID    uuid.UUID `json:"userID"`
+	Username  string    `json:"username"`
 	MessageID uuid.UUID `json:"messageID"`
 	Method    string    `json:"method"`
 	Message   string    `json:"message"`
@@ -238,6 +240,7 @@ func (a *App) Initialize() {
 	}
 	db.AutoMigrate(&Client{})
 	db.AutoMigrate(&Channel{})
+	db.AutoMigrate(&ChatMessage{})
 	a.Db = db
 
 	// initialize router
@@ -325,7 +328,23 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			_, msg, err := conn.ReadMessage()
 
 			if err != nil {
-				log.Error(err)
+				log.Warning("Websocket connection terminated.")
+
+				// broadcast the join message
+				var userLeaveMsg ChatMessage
+				userLeaveMsg.Type = "chat"
+				userLeaveMsg.MessageID = uuid.NewV4()
+				userLeaveMsg.Method = "CREATE"
+				userLeaveMsg.Type = "chat"
+				userLeaveMsg.Username = "Server Message"
+				userLeaveMsg.Message = clientInfo.Username + " has just left the channel."
+
+				for _, client := range wsClients {
+					client.WriteJSON(userLeaveMsg)
+				}
+
+				db.Create(&userLeaveMsg)
+
 				return
 			}
 
@@ -337,7 +356,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				continue
 			}
 
-			log.Debug("IN ", string(msg))
+			log.Debug("IN", string(msg))
 
 			switch message.Type {
 			case "chat":
@@ -349,11 +368,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				json.Unmarshal(msg, &chatMessage)
 				chatMessage.UserID = clientInfo.UUID
 				chatMessage.MessageID = uuid.NewV4()
+				chatMessage.Username = clientInfo.Username
 				log.Debug("BROADCAST", chatMessage)
 
 				for _, client := range wsClients {
 					client.WriteJSON(chatMessage)
 				}
+
+				db.Create(&chatMessage)
 
 			case "channel":
 				if !authed {
@@ -420,8 +442,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if !duplicate {
 						channelSubscriptions = append(channelSubscriptions, newSub)
-
-						fmt.Println(channelSubscriptions)
 					}
 
 					var chanRes ChannelResponse
@@ -469,6 +489,21 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Message:   "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
 							}
 							conn.WriteJSON(welcomeMessage)
+
+							// broadcast the join message
+							var userJoinEventMsg ChatMessage
+							userJoinEventMsg.Type = "chat"
+							userJoinEventMsg.MessageID = uuid.NewV4()
+							userJoinEventMsg.Method = "CREATE"
+							userJoinEventMsg.Type = "chat"
+							userJoinEventMsg.Username = "Server Message"
+							userJoinEventMsg.Message = clientInfo.Username + " has just joined the channel."
+
+							for _, client := range wsClients {
+								client.WriteJSON(userJoinEventMsg)
+							}
+
+							db.Create(&userJoinEventMsg)
 						}
 					}
 				}
