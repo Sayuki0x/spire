@@ -20,11 +20,12 @@ import (
 	uuid "github.com/satori/go.uuid"
 )
 
-var channelSubscriptions = []ChannelSub{}
+var wsClients = []*websocket.Conn{}
 
 const version string = "v0.1.0"
 
 type ChatMessage struct {
+	UserID    uuid.UUID `json:"userID"`
 	MessageID uuid.UUID `json:"messageID"`
 	Method    string    `json:"method"`
 	Message   string    `json:"message"`
@@ -290,7 +291,7 @@ func main() {
 // SocketHandler handles the websocket connection messages and responses.
 func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		wsClients := []*websocket.Conn{}
+
 		var upgrader = websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -306,8 +307,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 		authed := false
 		var clientInfo Client
-
-		// joinedChannels := []uuid.UUID{}
 
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -329,12 +328,20 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 			switch message.Type {
 			case "chat":
-				for _, conn := range wsClients {
-					var chatMessage ChatMessage
-					json.Unmarshal(msg, &chatMessage)
-
-					conn.WriteJSON(chatMessage)
+				if !authed {
+					log.Warning("Not authorized!")
+					break
 				}
+				var chatMessage ChatMessage
+				json.Unmarshal(msg, &chatMessage)
+				chatMessage.UserID = clientInfo.UUID
+				chatMessage.MessageID = uuid.NewV4()
+				log.Debug("BROADCAST", chatMessage)
+
+				for _, client := range wsClients {
+					client.WriteJSON(chatMessage)
+				}
+
 			case "channel":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -398,14 +405,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					duplicate := false
 
-					for _, sub := range channelSubscriptions {
-						if sub.ChannelID == newSub.ChannelID && sub.ClientID == newSub.ClientID && sub.Connection == newSub.Connection {
-							duplicate = true
-						}
-					}
-
 					if !duplicate {
 						channelSubscriptions = append(channelSubscriptions, newSub)
+
+						fmt.Println(channelSubscriptions)
 					}
 
 					var chanRes ChannelResponse
