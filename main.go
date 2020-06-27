@@ -24,6 +24,12 @@ var wsClients = []*websocket.Conn{}
 
 const version string = "v0.1.0"
 
+type WelcomeMessage struct {
+	MessageID uuid.UUID `json:"messageID"`
+	Type      string    `json:"type"`
+	Message   string    `json:"message"`
+}
+
 type ChatMessage struct {
 	UserID    uuid.UUID `json:"userID"`
 	MessageID uuid.UUID `json:"messageID"`
@@ -438,6 +444,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							log.Notice("User authorized successfully.")
 							authed = true
 							wsClients = append(wsClients, conn)
+							welcomeMessage := WelcomeMessage{
+								MessageID: uuid.NewV4(),
+								Type:      "welcomeMessage",
+								Message:   "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
+							}
+
+							conn.WriteJSON(welcomeMessage)
 						}
 					}
 				}
