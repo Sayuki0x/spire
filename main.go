@@ -403,7 +403,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							Type:    "error",
 							Message: "The max username length is 12 characters.",
 						}
-
+						log.Debug("OUT", nickError)
 						conn.WriteJSON(nickError)
 						break
 					}
@@ -435,6 +435,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				json.Unmarshal(msg, &pongMsg)
 
 				pongMsg.Type = "pong"
+				log.Debug("OUT", pongMsg)
 				conn.WriteJSON(pongMsg)
 
 			case "chat":
@@ -561,6 +562,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Status:    "SUCCESS",
 								Type:      "authResult",
 							}
+							log.Debug("OUT", authResult)
 							conn.WriteJSON(authResult)
 
 							// send server welcome message
@@ -569,6 +571,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Type:      "welcomeMessage",
 								Message:   "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
 							}
+							log.Debug("OUT", welcomeMessage)
 							conn.WriteJSON(welcomeMessage)
 
 							// broadcast the join message
@@ -622,7 +625,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					MessageID: historyReq.MessageID,
 					Status:    "SUCCESS",
 				}
-
+				log.Debug("OUT", successMsg)
 				conn.WriteJSON(successMsg)
 
 			case "challenge":
