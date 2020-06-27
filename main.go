@@ -23,6 +23,7 @@ import (
 var wsClients = []*websocket.Conn{}
 
 const version string = "v0.1.0"
+const serverUserID = "00000000-0000-0000-0000-000000000000"
 
 type WelcomeMessage struct {
 	MessageID uuid.UUID `json:"messageID"`
@@ -309,6 +310,14 @@ func main() {
 	a.Run(":8000")
 }
 
+func reverse(history []ChatMessage) []ChatMessage {
+	for i := 0; i < len(history)/2; i++ {
+		j := len(history) - i - 1
+		history[i], history[j] = history[j], history[i]
+	}
+	return history
+}
+
 // SocketHandler handles the websocket connection messages and responses.
 func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -528,6 +537,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Message:   "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
 							}
 							conn.WriteJSON(welcomeMessage)
+
+							// retrieve history and send to client
+							messages := []ChatMessage{}
+							db.Order("created_at desc").Not("user_id", serverUserID).Limit(15).Find(&messages)
+
+							for _, msg := range reverse(messages) {
+								conn.WriteJSON(msg)
+							}
 
 							// broadcast the join message
 							var userJoinEventMsg ChatMessage
