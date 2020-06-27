@@ -31,6 +31,11 @@ type WelcomeMessage struct {
 	Message   string    `json:"message"`
 }
 
+type PongMessage struct {
+	MessageID uuid.UUID `json:"messageID"`
+	Type      string    `json:"type"`
+}
+
 type HistoryReqMessage struct {
 	Type       string    `json:"type"`
 	MessageID  uuid.UUID `json:"messageID"`
@@ -425,6 +430,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 				}
+			case "ping":
+				var pongMsg PongMessage
+				json.Unmarshal(msg, &pongMsg)
+
+				pongMsg.Type = "pong"
+				conn.WriteJSON(pongMsg)
+
 			case "chat":
 				if !authed {
 					log.Warning("Not authorized!")
