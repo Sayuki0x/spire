@@ -70,6 +70,12 @@ type ChannelResponse struct {
 	Name      string    `json:"name"`
 }
 
+type AuthResultMessage struct {
+	Type      string    `json:"type"`
+	Status    string    `json:"status"`
+	MessageID uuid.UUID `json:"messageID"`
+}
+
 type ChannelList struct {
 	MessageID uuid.UUID `json:"messageID"`
 	Type      string    `json:"type"`
@@ -312,6 +318,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 		channelSubscriptions := []ChannelSub{}
 
 		authed := false
+
 		var clientInfo Client
 
 		for {
@@ -443,7 +450,19 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						if ed25519.Verify(challengeKey, []byte(sub.MessageID.String()), challengeSig) {
 							log.Notice("User authorized successfully.")
 							authed = true
+
+							// give client the auth success message
+							authResult := AuthResultMessage{
+								MessageID: uuid.NewV4(),
+								Status:    "SUCCESS",
+								Type:      "authResult",
+							}
+							conn.WriteJSON(authResult)
+
+							// append to authed client list
 							wsClients = append(wsClients, conn)
+
+							// send server welcome message
 							welcomeMessage := WelcomeMessage{
 								MessageID: uuid.NewV4(),
 								Type:      "welcomeMessage",
