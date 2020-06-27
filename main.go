@@ -86,6 +86,12 @@ type ChannelList struct {
 	Channels  []Channel `json:"channels"`
 }
 
+type UserMessage struct {
+	Type     string `json:"type"`
+	Method   string `json:"method"`
+	Username string `json:"username"`
+}
+
 // Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
 	Type string `json:"type"`
@@ -359,9 +365,41 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			log.Debug("IN", string(msg))
 
 			switch message.Type {
+			case "user":
+				if !authed {
+					log.Warning("Not authorized!")
+					conn.Close()
+					break
+				}
+
+				var userMessage UserMessage
+				json.Unmarshal(msg, &userMessage)
+
+				if userMessage.Method == "UPDATE" {
+					oldUsername := clientInfo.Username
+					db.Model(&clientInfo).Update("username", userMessage.Username)
+					clientInfo.Username = userMessage.Username
+
+					// broadcast the nick change message
+					var userNickChgMsg ChatMessage
+					userNickChgMsg.Type = "chat"
+					userNickChgMsg.MessageID = uuid.NewV4()
+					userNickChgMsg.Method = "CREATE"
+					userNickChgMsg.Type = "chat"
+					userNickChgMsg.Username = "Server Message"
+					userNickChgMsg.Message = oldUsername + " changed their nickname to " + userMessage.Username
+
+					for _, client := range wsClients {
+						client.WriteJSON(userNickChgMsg)
+					}
+
+					db.Create(&userNickChgMsg)
+				}
+
 			case "chat":
 				if !authed {
 					log.Warning("Not authorized!")
+					conn.Close()
 					break
 				}
 				var chatMessage ChatMessage
@@ -380,6 +418,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			case "channel":
 				if !authed {
 					log.Warning("Not authorized!")
+					conn.Close()
 					break
 				}
 
