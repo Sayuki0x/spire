@@ -40,6 +40,7 @@ type PongMessage struct {
 
 type HistoryReqMessage struct {
 	Type       string    `json:"type"`
+	ChannelID  uuid.UUID `json:"channelID"`
 	MessageID  uuid.UUID `json:"messageID"`
 	Method     string    `json:"method"`
 	TopMessage uuid.UUID `json:"topMessage"`
@@ -387,19 +388,32 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				// broadcast the leave message
 				var userLeaveMsg ChatMessage
-
-				db.Create(&userLeaveMsg)
-				userLeaveMsg.Type = "chat"
-				userLeaveMsg.MessageID = uuid.NewV4()
-				userLeaveMsg.Method = "CREATE"
-				userLeaveMsg.Type = "chat"
-				userLeaveMsg.Username = "Server Message"
-				userLeaveMsg.Message = clientInfo.Username + " has just left the channel."
-				db.Save(&userLeaveMsg)
+				channelStoredList := []uuid.UUID{}
 
 				for _, sub := range channelSubs {
 					for _, channelID := range joinedChannelIDs {
 						if sub.ChannelID == channelID {
+							alreadyStored := false
+							for _, chID := range channelStoredList {
+								if channelID == chID {
+									alreadyStored = true
+								}
+							}
+							if alreadyStored {
+								continue
+							}
+							channelStoredList = append(channelStoredList, channelID)
+
+							db.Create(&userLeaveMsg)
+							userLeaveMsg.Type = "chat"
+							userLeaveMsg.MessageID = uuid.NewV4()
+							userLeaveMsg.ChannelID = channelID
+							userLeaveMsg.Method = "CREATE"
+							userLeaveMsg.Type = "chat"
+							userLeaveMsg.Username = "Server Message"
+							userLeaveMsg.Message = clientInfo.Username + " has just left the channel."
+							db.Save(&userLeaveMsg)
+
 							sub.Connection.WriteJSON(userLeaveMsg)
 						}
 					}
@@ -543,6 +557,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					db.Create(&userJoinEventMsg)
 					userJoinEventMsg.Type = "chat"
 					userJoinEventMsg.MessageID = uuid.NewV4()
+					userJoinEventMsg.ChannelID = channelMessage.ChannelID
 					userJoinEventMsg.Method = "CREATE"
 					userJoinEventMsg.Type = "chat"
 					userJoinEventMsg.Username = "Server Message"
@@ -626,7 +641,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				// retrieve history and send to client
 				messages := []ChatMessage{}
-				db.Where("id > ?", topMessage.ID).Find(&messages)
+				db.Where("id > ?", topMessage.ID).Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
 
 				for _, msg := range messages {
 					conn.WriteJSON(msg)
