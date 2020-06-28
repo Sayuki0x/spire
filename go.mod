@@ -1,4 +1,4 @@
-module vex
+module vex-server
 
 go 1.13
 
