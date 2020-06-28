@@ -1,5 +1,15 @@
 # vex-server
+
 A websocket powered chat server, written in go. Uses ed25519 signing for user authentication. Aims to eventually provide a secure, an easy to use, end to end encrypted messaging backend for small to medium groups.
+
+## installing
+
+simply download the executable with wget and run it.
+
+```
+wget https://github.com/ExtraHash/vex-server/releases/download/v0.1.0/vex-server
+./vex-server
+```
 
 ## compiling from source
 
