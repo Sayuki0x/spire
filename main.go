@@ -537,24 +537,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						break
 					}
 
-					var newSub ChannelSub
-					newSub.ClientID = clientInfo.UUID
-					newSub.ChannelID = requestedChannel.ChannelID
-					newSub.Connection = conn
-
-					channelSubs = append(channelSubs, &newSub)
-					joinedChannelIDs = append(joinedChannelIDs, newSub.ChannelID)
-
-					var chanRes ChannelResponse
-					chanRes.ChannelID = requestedChannel.ChannelID
-					chanRes.Method = channelMessage.Method
-					chanRes.Name = requestedChannel.Name
-					chanRes.Status = "SUCCESS"
-					chanRes.Type = "channelJoinRes"
-
-					log.Debug("OUT", chanRes)
-					conn.WriteJSON(chanRes)
-
 					// broadcast the join message
 					var userJoinEventMsg ChatMessage
 
@@ -572,6 +554,24 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							sub.Connection.WriteJSON(userJoinEventMsg)
 						}
 					}
+
+					var newSub ChannelSub
+					newSub.ClientID = clientInfo.UUID
+					newSub.ChannelID = requestedChannel.ChannelID
+					newSub.Connection = conn
+
+					channelSubs = append(channelSubs, &newSub)
+					joinedChannelIDs = append(joinedChannelIDs, newSub.ChannelID)
+
+					var chanRes ChannelResponse
+					chanRes.ChannelID = requestedChannel.ChannelID
+					chanRes.Method = channelMessage.Method
+					chanRes.Name = requestedChannel.Name
+					chanRes.Status = "SUCCESS"
+					chanRes.Type = "channelJoinRes"
+
+					log.Debug("OUT", chanRes)
+					conn.WriteJSON(chanRes)
 				}
 
 			case "challengeRes":
@@ -619,8 +619,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				var historyReq HistoryReqMessage
 				json.Unmarshal(msg, &historyReq)
 
-				log.Notice("History Request from message " + historyReq.TopMessage.String())
-				log.Notice(historyReq)
+				log.Debug("IN", historyReq)
 
 				var topMessage ChatMessage
 				db.First(&topMessage, "message_id = ?", historyReq.TopMessage)
