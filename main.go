@@ -22,6 +22,7 @@ import (
 )
 
 var wsClients = []*websocket.Conn{}
+var channelSubs = []*ChannelSub{}
 
 const version string = "v0.1.0"
 const serverUserID = "00000000-0000-0000-0000-000000000000"
@@ -101,9 +102,10 @@ type ChannelList struct {
 }
 
 type UserMessage struct {
-	Type     string `json:"type"`
-	Method   string `json:"method"`
-	Username string `json:"username"`
+	Type      string    `json:"type"`
+	Method    string    `json:"method"`
+	Username  string    `json:"username"`
+	ChannelID uuid.UUID `json:"channelID"`
 }
 
 // Message is a type for websocket messages that pass to and from server and client.
@@ -289,6 +291,23 @@ func generateKeys() KeyPair {
 	return keys
 }
 
+func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger) {
+	channels := []Channel{}
+
+	db.Where("public = ?", true).Find(&channels)
+
+	var channelList ChannelList
+
+	channelList.MessageID = uuid.NewV4()
+	channelList.Type = "channelListResponse"
+	channelList.Status = "SUCCESS"
+	channelList.Method = "RETRIEVE"
+	channelList.Channels = channels
+
+	log.Debug("OUT", channelList)
+	conn.WriteJSON(channelList)
+}
+
 func readBytesFromFile(filename string, log *logging.Logger) []byte {
 	// Open file for reading
 	file, openErr := os.Open(filename)
@@ -353,7 +372,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 		log.Notice("Incoming websocket connection.")
 
 		challengeSubscriptions := []ChallengeSub{}
-		channelSubscriptions := []ChannelSub{}
+		joinedChannelIDs := []uuid.UUID{}
 
 		authed := false
 		go killUnauthedConnection(&authed, conn)
@@ -366,7 +385,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			if err != nil {
 				log.Warning("Websocket connection terminated.")
 
-				// broadcast the join message
+				// broadcast the leave message
 				var userLeaveMsg ChatMessage
 
 				db.Create(&userLeaveMsg)
@@ -378,8 +397,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				userLeaveMsg.Message = clientInfo.Username + " has just left the channel."
 				db.Save(&userLeaveMsg)
 
-				for _, client := range wsClients {
-					client.WriteJSON(userLeaveMsg)
+				for _, sub := range channelSubs {
+					for _, channelID := range joinedChannelIDs {
+						if sub.ChannelID == channelID {
+							sub.Connection.WriteJSON(userLeaveMsg)
+						}
+					}
 				}
 
 				return
@@ -428,6 +451,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					db.Create(&userNickChgMsg)
 
 					userNickChgMsg.Type = "chat"
+					userNickChgMsg.ChannelID = userMessage.ChannelID
 					userNickChgMsg.MessageID = uuid.NewV4()
 					userNickChgMsg.Method = "CREATE"
 					userNickChgMsg.Type = "chat"
@@ -436,8 +460,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					db.Save(&userNickChgMsg)
 
-					for _, client := range wsClients {
-						client.WriteJSON(userNickChgMsg)
+					log.Notice("requesting nick changer id is " + userMessage.ChannelID.String())
+					for _, sub := range channelSubs {
+						log.Notice(sub.ChannelID.String() + "=" + userMessage.ChannelID.String())
+						if sub.ChannelID == userMessage.ChannelID {
+							sub.Connection.WriteJSON(userNickChgMsg)
+						}
 					}
 
 				}
@@ -467,9 +495,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				db.Save(&chatMessage)
 
 				log.Debug("BROADCAST", chatMessage)
-
-				for _, client := range wsClients {
-					client.WriteJSON(chatMessage)
+				for _, sub := range channelSubs {
+					if sub.ChannelID == chatMessage.ChannelID {
+						sub.Connection.WriteJSON(chatMessage)
+					}
 				}
 
 			case "channel":
@@ -491,32 +520,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					db.Create(&newChannel)
 
-					var channelRes ChannelResponse
-					channelRes.Type = "channelCreateRes"
-					channelRes.Method = "CREATE"
-					channelRes.Status = "SUCCESS"
-					channelRes.ChannelID = newChannel.ChannelID
-					channelRes.Name = newChannel.Name
-
-					log.Debug("OUT", channelRes)
-					conn.WriteJSON(channelRes)
+					sendChannelList(conn, db, log)
 				}
 
 				if channelMessage.Method == "RETRIEVE" {
-					channels := []Channel{}
-
-					db.Where("public = ?", true).Find(&channels)
-
-					var channelList ChannelList
-
-					channelList.MessageID = channelMessage.MessageID
-					channelList.Type = "channelListResponse"
-					channelList.Status = "SUCCESS"
-					channelList.Method = "RETRIEVE"
-					channelList.Channels = channels
-
-					log.Debug("OUT", channelList)
-					conn.WriteJSON(channelList)
+					sendChannelList(conn, db, log)
 				}
 
 				if channelMessage.Method == "JOIN" {
@@ -534,11 +542,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					newSub.ChannelID = requestedChannel.ChannelID
 					newSub.Connection = conn
 
-					duplicate := false
-
-					if !duplicate {
-						channelSubscriptions = append(channelSubscriptions, newSub)
-					}
+					channelSubs = append(channelSubs, &newSub)
+					joinedChannelIDs = append(joinedChannelIDs, newSub.ChannelID)
 
 					var chanRes ChannelResponse
 					chanRes.ChannelID = requestedChannel.ChannelID
@@ -549,6 +554,24 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					log.Debug("OUT", chanRes)
 					conn.WriteJSON(chanRes)
+
+					// broadcast the join message
+					var userJoinEventMsg ChatMessage
+
+					db.Create(&userJoinEventMsg)
+					userJoinEventMsg.Type = "chat"
+					userJoinEventMsg.MessageID = uuid.NewV4()
+					userJoinEventMsg.Method = "CREATE"
+					userJoinEventMsg.Type = "chat"
+					userJoinEventMsg.Username = "Server Message"
+					userJoinEventMsg.Message = clientInfo.Username + " has just joined the channel."
+					db.Save(&userJoinEventMsg)
+
+					for _, sub := range channelSubs {
+						if sub.ChannelID == requestedChannel.ChannelID {
+							sub.Connection.WriteJSON(userJoinEventMsg)
+						}
+					}
 				}
 
 			case "challengeRes":
@@ -585,25 +608,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							log.Debug("OUT", welcomeMessage)
 							conn.WriteJSON(welcomeMessage)
 
-							// broadcast the join message
-							var userJoinEventMsg ChatMessage
+							// send the channel list
+							sendChannelList(conn, db, log)
 
-							db.Create(&userJoinEventMsg)
-							userJoinEventMsg.Type = "chat"
-							userJoinEventMsg.MessageID = uuid.NewV4()
-							userJoinEventMsg.Method = "CREATE"
-							userJoinEventMsg.Type = "chat"
-							userJoinEventMsg.Username = "Server Message"
-							userJoinEventMsg.Message = clientInfo.Username + " has just joined the channel."
-							db.Save(&userJoinEventMsg)
-
-							for _, client := range wsClients {
-								client.WriteJSON(userJoinEventMsg)
-							}
-
-							// append to authed client list
 							wsClients = append(wsClients, conn)
-
 						}
 					}
 				}
@@ -617,15 +625,9 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				var topMessage ChatMessage
 				db.First(&topMessage, "message_id = ?", historyReq.TopMessage)
 
-				log.Notice("Found message at ID:")
-				log.Notice(topMessage.ID)
-
 				// retrieve history and send to client
 				messages := []ChatMessage{}
 				db.Where("id > ?", topMessage.ID).Find(&messages)
-
-				log.Notice("Sending back messages of length")
-				log.Notice(len(messages))
 
 				for _, msg := range messages {
 					conn.WriteJSON(msg)
