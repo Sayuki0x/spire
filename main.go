@@ -142,13 +142,20 @@ type UserMessage struct {
 
 // Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
-	Type string `json:"type"`
+	Type      string    `json:"type"`
+	MessageID uuid.UUID `json:"messageID"`
 }
 
 type SuccessMessage struct {
 	Type      string    `json:"type"`
 	MessageID uuid.UUID `json:"messageID"`
 	Status    string    `json:"status"`
+}
+
+type InfoMessage struct {
+	Type      string    `json:"type"`
+	MessageID uuid.UUID `json:"messageID"`
+	Message   string    `json:"message"`
 }
 
 type ChannelSub struct {
@@ -572,8 +579,15 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				if permMsg.Method == "CREATE" {
 
+					// if it's the empty uuid
+					if permMsg.Permission.UserID.String() == serverUserID {
+						log.Warning("Create message went without UUID, UUID is a required parameter.")
+						break
+					}
+
 					existingPermissions := []ChannelPermission{}
 					duplicate := false
+
 					db.Where("user_id = ?", permMsg.Permission.UserID).Find(&existingPermissions)
 					for _, prm := range existingPermissions {
 						if prm.ChannelID == permMsg.Permission.ChannelID {
@@ -603,7 +617,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 					db.Create(&permMsg.Permission)
-
 					successMsg := SuccessMessage{
 						Type:      "channelPermRes",
 						MessageID: uuid.NewV4(),
@@ -611,6 +624,17 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 					log.Debug("OUT", successMsg)
 					conn.WriteJSON(successMsg)
+
+					for _, chanSub := range channelSubs {
+						if chanSub.ClientID == permMsg.Permission.UserID {
+							grantMessage := InfoMessage{
+								Type:      "serverMessage",
+								MessageID: uuid.NewV4(),
+								Message:   "You have been granted access to a new channel. Check /channel ls for details.",
+							}
+							chanSub.Connection.WriteJSON(grantMessage)
+						}
+					}
 				}
 			case "chat":
 				if !authed {
