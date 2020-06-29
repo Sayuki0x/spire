@@ -575,6 +575,17 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 
 				if channelMessage.Method == "CREATE" {
+
+					if clientInfo.PowerLevel < 50 {
+						log.Warning("User does not have create permissions.")
+						var challengeError ErrorMessage
+						challengeError.Type = "error"
+						challengeError.Message = "You don't have a high enough power level."
+						log.Debug("OUT", challengeError)
+						conn.WriteJSON(challengeError)
+						break
+					}
+
 					var newChannel Channel
 					newChannel.ChannelID = uuid.NewV4()
 					newChannel.Admin = clientInfo.UUID
