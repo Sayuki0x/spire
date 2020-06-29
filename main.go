@@ -24,7 +24,7 @@ import (
 var wsClients = []*websocket.Conn{}
 var channelSubs = []*ChannelSub{}
 
-const version string = "v0.2.0"
+const version string = "v0.3.0"
 const serverUserID = "00000000-0000-0000-0000-000000000000"
 
 type ChannelPermission struct {
