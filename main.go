@@ -318,9 +318,14 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 		channels = append(channels, privChannel)
 	}
 
+	orderedChannels := []Channel{}
+
 	for i, channel := range channels {
-		channel.ID = uint(i)
+		channel.ID = uint(i + 1)
+		orderedChannels = append(orderedChannels, channel)
 	}
+
+	fmt.Println(channels)
 
 	var channelList ChannelList
 
@@ -328,7 +333,7 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 	channelList.Type = "channelListResponse"
 	channelList.Status = "SUCCESS"
 	channelList.Method = "RETRIEVE"
-	channelList.Channels = channels
+	channelList.Channels = orderedChannels
 
 	log.Debug("OUT", channelList)
 	conn.WriteJSON(channelList)
