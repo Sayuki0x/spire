@@ -308,24 +308,18 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 
 	db.Where("public = ?", true).Find(&channels)
 
-	log.Notice("Found public channels:")
-	log.Notice(len(channels))
-
 	channelPerms := []ChannelPermission{}
 
 	db.Where("user_id = ?", clientInfo.UUID).Find(&channelPerms)
 
-	fmt.Println("Found channel permissions")
-	fmt.Println(len(channelPerms))
-
 	for _, perm := range channelPerms {
 		var privChannel Channel
 		db.First(&privChannel, "channel_id = ?", perm.ChannelID)
-
-		fmt.Println("Found private channel:")
-		fmt.Println(privChannel.ChannelID.String(), privChannel.Name)
-
 		channels = append(channels, privChannel)
+	}
+
+	for i, channel := range channels {
+		channel.ID = uint(i)
 	}
 
 	var channelList ChannelList
