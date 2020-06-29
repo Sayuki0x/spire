@@ -194,7 +194,8 @@ func printAscii(log *logging.Logger) {
 		"          v:::v            ee:::::::::::::e   x:::::x    x:::::x \n" +
 		"           vvv               eeeeeeeeeeeeee  xxxxxxx      xxxxxxx\033[37m\n\n")
 	log.Info("Vex version number " + version)
-	log.Info("All Rights Reserved © 2020 ExtraHash")
+	log.Info("© 2020 LogicBite LLC")
+	log.Info("See included LICENSE for details")
 }
 
 func checkConfig(log *logging.Logger) {
@@ -384,41 +385,27 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			_, msg, err := conn.ReadMessage()
 
 			if err != nil {
-				log.Warning("Websocket connection terminated.")
+				scanComplete := false
+				log.Warning("Websocket connection terminated. Removing subscriptions.")
+				for true {
+					if len(channelSubs) == 0 {
+						break
+					}
+					for i, sb := range channelSubs {
+						if sb.ClientID == clientInfo.UUID && sb.Connection == conn {
+							channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
+							break
+						}
 
-				// broadcast the leave message
-				var userLeaveMsg ChatMessage
-				channelStoredList := []uuid.UUID{}
-
-				for _, sub := range channelSubs {
-					for _, channelID := range joinedChannelIDs {
-						if sub.ChannelID == channelID {
-							alreadyStored := false
-							for _, chID := range channelStoredList {
-								if channelID == chID {
-									alreadyStored = true
-								}
-							}
-							if alreadyStored {
-								continue
-							}
-							channelStoredList = append(channelStoredList, channelID)
-
-							db.Create(&userLeaveMsg)
-							userLeaveMsg.Type = "chat"
-							userLeaveMsg.MessageID = uuid.NewV4()
-							userLeaveMsg.ChannelID = channelID
-							userLeaveMsg.Method = "CREATE"
-							userLeaveMsg.Type = "chat"
-							userLeaveMsg.Username = "Server Message"
-							userLeaveMsg.Message = clientInfo.Username + " has just left the channel."
-							db.Save(&userLeaveMsg)
-
-							sub.Connection.WriteJSON(userLeaveMsg)
+						if i == len(channelSubs)-1 {
+							scanComplete = true
 						}
 					}
+					if scanComplete {
+						break
+					}
 				}
-
+				log.Debug("Subscriptions removed for " + clientInfo.UUID.String())
 				return
 			}
 
@@ -525,6 +512,43 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				var channelMessage ChannelMessage
 				json.Unmarshal(msg, &channelMessage)
 
+				if channelMessage.Method == "LEAVE" {
+					for true {
+						if len(channelSubs) == 0 {
+							break
+						}
+						scanCompleted := false
+						fmt.Println(channelMessage)
+						for i, sb := range channelSubs {
+							if sb.ChannelID == channelMessage.ChannelID && sb.ClientID == clientInfo.UUID && sb.Connection == conn {
+								leaveMsgRes := ChannelMessage{
+									Type:      "channelLeaveMsgRes",
+									Method:    "LEAVE",
+									ChannelID: channelMessage.ChannelID,
+									MessageID: uuid.NewV4(),
+								}
+								sb.Connection.WriteJSON(leaveMsgRes)
+
+								// remove this entry from slice
+								channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
+
+								fmt.Println("single removal complete. New length is")
+								fmt.Println(len(channelSubs))
+								break
+							}
+
+							if i == len(channelSubs)-1 {
+								scanCompleted = true
+							}
+						}
+						fmt.Println("Removal scan complete. New length is")
+						fmt.Println(len(channelSubs))
+						if scanCompleted {
+							break
+						}
+					}
+				}
+
 				if channelMessage.Method == "CREATE" {
 					var newChannel Channel
 					newChannel.ChannelID = uuid.NewV4()
@@ -548,6 +572,19 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if requestedChannel.ID == 0 {
 						log.Warning("Client attempted subscription to nonexistant channel id " + requestedChannel.ChannelID.String())
+						break
+					}
+
+					duplicate := false
+					for _, sub := range channelSubs {
+						if sub.ChannelID == channelMessage.ChannelID && sub.ClientID == clientInfo.UUID && sub.Connection == conn {
+							log.Warning("Duplicate subscription from client, not adding.")
+							duplicate = true
+							break
+						}
+					}
+
+					if duplicate {
 						break
 					}
 
