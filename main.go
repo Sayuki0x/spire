@@ -344,7 +344,9 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 	for _, perm := range channelPerms {
 		var privChannel Channel
 		db.First(&privChannel, "channel_id = ?", perm.ChannelID)
-		channels = append(channels, privChannel)
+		if privChannel.ID != 0 {
+			channels = append(channels, privChannel)
+		}
 	}
 
 	orderedChannels := []Channel{}
@@ -353,8 +355,6 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 		channel.ID = uint(i + 1)
 		orderedChannels = append(orderedChannels, channel)
 	}
-
-	fmt.Println(channels)
 
 	var channelList ChannelList
 
@@ -735,6 +735,64 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				if channelMessage.Method == "RETRIEVE" {
 					sendChannelList(conn, db, log, clientInfo)
+				}
+
+				if channelMessage.Method == "DELETE" {
+					if clientInfo.PowerLevel < 50 {
+						log.Warning("User does not have delete permissions.")
+						var challengeError ErrorMessage
+						challengeError.Type = "error"
+						challengeError.Message = "You don't have a high enough power level."
+						log.Debug("OUT", challengeError)
+						conn.WriteJSON(challengeError)
+						break
+					}
+					var deletedChannel Channel
+					db.First(&deletedChannel, "channel_id = ?", channelMessage.ChannelID)
+					if deletedChannel.ID == 0 {
+						log.Warning("Channel DELETE request for nonexistant channel.")
+						break
+					}
+					db.Delete(&deletedChannel)
+					for _, sub := range channelSubs {
+						if sub.ChannelID == channelMessage.ChannelID {
+							delMsg := InfoMessage{
+								Type:      "serverMessage",
+								MessageID: uuid.NewV4(),
+								Message:   "The channel has been deleted.",
+							}
+
+							if sub.ClientID != clientInfo.UUID {
+								sub.Connection.WriteJSON(delMsg)
+							}
+							scanComplete := false
+							for true {
+								if len(channelSubs) == 0 {
+									break
+								}
+								for i, sb := range channelSubs {
+									if sb.ChannelID == channelMessage.ChannelID {
+										channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
+										break
+									}
+
+									if i == len(channelSubs)-1 {
+										scanComplete = true
+									}
+								}
+								if scanComplete {
+									break
+								}
+							}
+
+						}
+					}
+					successMsg := InfoMessage{
+						Type:      "serverMessage",
+						MessageID: uuid.NewV4(),
+						Message:   "The channel has been deleted.",
+					}
+					conn.WriteJSON(successMsg)
 				}
 
 				if channelMessage.Method == "JOIN" {
