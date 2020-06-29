@@ -29,9 +29,31 @@ const serverUserID = "00000000-0000-0000-0000-000000000000"
 
 type ChannelPermission struct {
 	gorm.Model
-	UserID     uuid.UUID
-	ChannelID  uuid.UUID
-	PowerLevel int
+	UserID     uuid.UUID `json:"userID"`
+	ChannelID  uuid.UUID `json:"channelID"`
+	PowerLevel int       `json:"powerLevel"`
+}
+
+type UserInfoMsg struct {
+	MessageID uuid.UUID `json:"messageID"`
+	Type      string    `json:"type"`
+	Method    string    `json:"method"`
+	Username  string    `json:"username"`
+	UserTag   string    `json:"userTag"`
+}
+
+type UserInfoRes struct {
+	MessageID uuid.UUID `json:"messageID"`
+	Type      string    `json:"type"`
+	Method    string    `json:"method"`
+	MatchList []Client  `json:"matchList"`
+}
+
+type ChannelPermMsg struct {
+	MessageID  uuid.UUID         `json:"messageID"`
+	Type       string            `json:"type"`
+	Method     string            `json:"method"`
+	Permission ChannelPermission `json:"permission"`
 }
 
 type WelcomeMessage struct {
@@ -506,7 +528,90 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				pongMsg.Type = "pong"
 				log.Debug("OUT", pongMsg)
 				conn.WriteJSON(pongMsg)
+			case "userInfo":
+				if !authed {
+					log.Warning("Not authorized!")
+					conn.Close()
+					break
+				}
+				var userInfoMsg UserInfoMsg
+				json.Unmarshal(msg, &userInfoMsg)
 
+				userList := []Client{}
+				db.Where("username = ?", userInfoMsg.Username).Find(&userList)
+
+				matchList := []Client{}
+
+				for _, usr := range userList {
+					tag := usr.UUID.String()[9:13]
+					if tag == userInfoMsg.UserTag {
+						matchList = append(matchList, usr)
+					}
+				}
+
+				userInfoRes := UserInfoRes{
+					MessageID: uuid.NewV4(),
+					Type:      "userInfoRes",
+					Method:    userInfoMsg.Method,
+					MatchList: matchList,
+				}
+				conn.WriteJSON(userInfoRes)
+			case "channelPerm":
+				if !authed {
+					log.Warning("Not authorized!")
+					conn.Close()
+					break
+				}
+				if clientInfo.PowerLevel < 50 {
+					log.Warning("User not authorized to change channel permissions!")
+					break
+				}
+
+				var permMsg ChannelPermMsg
+				json.Unmarshal(msg, &permMsg)
+
+				if permMsg.Method == "CREATE" {
+
+					existingPermissions := []ChannelPermission{}
+					duplicate := false
+					db.Where("user_id = ?", permMsg.Permission.UserID).Find(&existingPermissions)
+					for _, prm := range existingPermissions {
+						if prm.ChannelID == permMsg.Permission.ChannelID {
+							var challengeError ErrorMessage
+							challengeError.Type = "error"
+							challengeError.Message = "That user already has permission to that channel."
+							log.Debug("OUT", challengeError)
+							conn.WriteJSON(challengeError)
+							log.Warning("Duplicate permission requested.")
+							duplicate = true
+							break
+						}
+					}
+
+					if duplicate {
+						break
+					}
+
+					if permMsg.Permission.PowerLevel > clientInfo.PowerLevel {
+						log.Warning("User does not have high enough power level to create permission.")
+						var challengeError ErrorMessage
+						challengeError.Type = "error"
+						challengeError.Message = "You can't create a permission with a power level higher than yourself."
+						log.Debug("OUT", challengeError)
+						conn.WriteJSON(challengeError)
+						break
+					}
+
+					db.Create(&permMsg.Permission)
+
+					successMsg := SuccessMessage{
+						Type:      "channelPermRes",
+						MessageID: uuid.NewV4(),
+						Status:    "SUCCESS",
+					}
+					log.Debug("OUT", successMsg)
+					conn.WriteJSON(successMsg)
+				}
 			case "chat":
 				if !authed {
 					log.Warning("Not authorized!")
