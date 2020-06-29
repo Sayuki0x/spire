@@ -531,9 +531,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 								// remove this entry from slice
 								channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
-
-								fmt.Println("single removal complete. New length is")
-								fmt.Println(len(channelSubs))
 								break
 							}
 
@@ -541,8 +538,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								scanCompleted = true
 							}
 						}
-						fmt.Println("Removal scan complete. New length is")
-						fmt.Println(len(channelSubs))
 						if scanCompleted {
 							break
 						}
@@ -668,6 +663,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 				}
 			case "historyReq":
+				if !authed {
+					log.Warning("Not authorized!")
+					conn.Close()
+					break
+				}
 				var historyReq HistoryReqMessage
 				json.Unmarshal(msg, &historyReq)
 
