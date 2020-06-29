@@ -550,7 +550,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 
 				userInfoRes := UserInfoRes{
-					MessageID: uuid.NewV4(),
+					MessageID: userInfoMsg.MessageID,
 					Type:      "userInfoRes",
 					Method:    userInfoMsg.Method,
 					MatchList: matchList,
