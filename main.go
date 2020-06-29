@@ -27,6 +27,13 @@ var channelSubs = []*ChannelSub{}
 const version string = "v0.2.0"
 const serverUserID = "00000000-0000-0000-0000-000000000000"
 
+type ChannelPermission struct {
+	gorm.Model
+	UserID     uuid.UUID
+	ChannelID  uuid.UUID
+	PowerLevel int
+}
+
 type WelcomeMessage struct {
 	MessageID uuid.UUID `json:"messageID"`
 	Type      string    `json:"type"`
@@ -59,9 +66,10 @@ type ChatMessage struct {
 
 type Client struct {
 	gorm.Model
-	PubKey   string
-	Username string
-	UUID     uuid.UUID
+	PubKey     string
+	Username   string
+	PowerLevel int
+	UUID       uuid.UUID
 }
 
 type Channel struct {
@@ -77,6 +85,7 @@ type ChannelMessage struct {
 	Method    string    `json:"method"`
 	ChannelID uuid.UUID `json:"channelID"`
 	MessageID uuid.UUID `json:"messageID"`
+	Private   bool      `json:"privateChannel"`
 	Name      string    `json:"name"`
 }
 
@@ -271,6 +280,7 @@ func (a *App) Initialize() {
 	db.AutoMigrate(&Client{})
 	db.AutoMigrate(&Channel{})
 	db.AutoMigrate(&ChatMessage{})
+	db.AutoMigrate(&ChannelPermission{})
 	a.Db = db
 
 	// initialize router
@@ -293,10 +303,30 @@ func generateKeys() KeyPair {
 	return keys
 }
 
-func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger) {
+func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, clientInfo Client) {
 	channels := []Channel{}
 
 	db.Where("public = ?", true).Find(&channels)
+
+	log.Notice("Found public channels:")
+	log.Notice(len(channels))
+
+	channelPerms := []ChannelPermission{}
+
+	db.Where("user_id = ?", clientInfo.UUID).Find(&channelPerms)
+
+	fmt.Println("Found channel permissions")
+	fmt.Println(len(channelPerms))
+
+	for _, perm := range channelPerms {
+		var privChannel Channel
+		db.First(&privChannel, "channel_id = ?", perm.ChannelID)
+
+		fmt.Println("Found private channel:")
+		fmt.Println(privChannel.ChannelID.String(), privChannel.Name)
+
+		channels = append(channels, privChannel)
+	}
 
 	var channelList ChannelList
 
@@ -548,22 +578,48 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					var newChannel Channel
 					newChannel.ChannelID = uuid.NewV4()
 					newChannel.Admin = clientInfo.UUID
-					newChannel.Public = true
+					newChannel.Public = !channelMessage.Private
 					newChannel.Name = channelMessage.Name
 
-					db.Create(&newChannel)
+					if !newChannel.Public {
+						var channelPerm ChannelPermission
+						db.Create(&channelPerm)
+						channelPerm.UserID = clientInfo.UUID
+						channelPerm.ChannelID = newChannel.ChannelID
+						channelPerm.PowerLevel = 100
+						db.Save(&channelPerm)
+					}
 
-					sendChannelList(conn, db, log)
+					db.Create(&newChannel)
+					sendChannelList(conn, db, log, clientInfo)
 				}
 
 				if channelMessage.Method == "RETRIEVE" {
-					sendChannelList(conn, db, log)
+					sendChannelList(conn, db, log, clientInfo)
 				}
 
 				if channelMessage.Method == "JOIN" {
 
 					var requestedChannel Channel
 					db.First(&requestedChannel, "channel_id = ?", channelMessage.ChannelID.String())
+
+					if !requestedChannel.Public {
+						hasPermission := false
+
+						cPerms := []ChannelPermission{}
+						db.Where("user_id = ?", clientInfo.UUID).Find(&cPerms)
+
+						for _, perm := range cPerms {
+							if perm.ChannelID == requestedChannel.ChannelID {
+								hasPermission = true
+							}
+						}
+
+						if !hasPermission {
+							log.Warning("User is requesting access to channel he does not have permission to.")
+							break
+						}
+					}
 
 					if requestedChannel.ID == 0 {
 						log.Warning("Client attempted subscription to nonexistant channel id " + requestedChannel.ChannelID.String())
@@ -656,7 +712,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							conn.WriteJSON(welcomeMessage)
 
 							// send the channel list
-							sendChannelList(conn, db, log)
+							sendChannelList(conn, db, log, clientInfo)
 
 							wsClients = append(wsClients, conn)
 						}
@@ -745,7 +801,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					identityResponse.MessageID = identityMessage.MessageID
 					identityResponse.Status = "SUCCESS"
 
-					db.Create(&Client{UUID: identityResponse.UUID, Username: "Anonymous"})
+					db.Create(&Client{UUID: identityResponse.UUID, Username: "Anonymous", PowerLevel: 0})
 					log.Debug("OUT", identityResponse)
 					conn.WriteJSON(identityResponse)
 				}
