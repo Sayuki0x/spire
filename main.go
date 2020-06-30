@@ -97,6 +97,7 @@ type Client struct {
 	Username   string
 	PowerLevel int
 	UUID       uuid.UUID
+	Banned     bool
 }
 
 type Channel struct {
@@ -143,6 +144,7 @@ type UserMessage struct {
 	Method    string    `json:"method"`
 	Username  string    `json:"username"`
 	ChannelID uuid.UUID `json:"channelID"`
+	UserID    uuid.UUID `json:"userID"`
 }
 
 // Message is a type for websocket messages that pass to and from server and client.
@@ -206,6 +208,7 @@ type IdentityResponse struct {
 
 type ErrorMessage struct {
 	Type    string `json:"type"`
+	Code    string `json:"code"`
 	Message string `json:"message"`
 	Error   error  `json:"error"`
 }
@@ -522,6 +525,85 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				var userMessage UserMessage
 				json.Unmarshal(msg, &userMessage)
+
+				if userMessage.Method == "BAN" {
+					if clientInfo.PowerLevel < 50 {
+						permError := ErrorMessage{
+							Type:    "error",
+							Message: "You don't have a high enough power level.",
+						}
+						log.Debug("OUT", permError)
+						conn.WriteJSON(permError)
+						break
+					}
+
+					var bannedUser Client
+					db.First(&bannedUser, "uuid = ?", userMessage.UserID)
+
+					if bannedUser.ID == 0 {
+						log.Warning("Requested ban to user that does not exist.")
+						break
+					}
+
+					bannedUser.Banned = true
+					db.Save(&bannedUser)
+
+					for _, sub := range channelSubs {
+						if sub.ClientID == userMessage.UserID {
+							kickErr := ErrorMessage{
+								Type:    "error",
+								Code:    "BANNED",
+								Message: "You have been banned.",
+							}
+							log.Debug("OUT", kickErr)
+							sub.Connection.WriteJSON(kickErr)
+							timer := time.NewTimer(100 * time.Millisecond)
+							<-timer.C
+							sub.Connection.Close()
+						}
+					}
+					log.Notice("Banned user " + userMessage.UserID.String())
+					kickSuccessMsg := InfoMessage{
+						Type:      "serverMessage",
+						MessageID: uuid.NewV4(),
+						Message:   "You have banned user " + userMessage.UserID.String(),
+					}
+					conn.WriteJSON(kickSuccessMsg)
+				}
+
+				if userMessage.Method == "KICK" {
+					if clientInfo.PowerLevel < 50 {
+						permError := ErrorMessage{
+							Type:    "error",
+							Message: "You don't have a high enough power level.",
+						}
+						log.Debug("OUT", permError)
+						conn.WriteJSON(permError)
+						break
+					}
+
+					for _, sub := range channelSubs {
+						if sub.ClientID == userMessage.UserID {
+							kickErr := ErrorMessage{
+								Type:    "error",
+								Code:    "KICKED",
+								Message: "You have been kicked.",
+							}
+							log.Debug("OUT", kickErr)
+							sub.Connection.WriteJSON(kickErr)
+							timer := time.NewTimer(100 * time.Millisecond)
+							<-timer.C
+							sub.Connection.Close()
+						}
+					}
+					log.Notice("Kicked user " + userMessage.UserID.String())
+					kickSuccessMsg := InfoMessage{
+						Type:      "serverMessage",
+						MessageID: uuid.NewV4(),
+						Message:   "You have kicked user " + userMessage.UserID.String(),
+					}
+					conn.WriteJSON(kickSuccessMsg)
+				}
 
 				if userMessage.Method == "UPDATE" {
 					oldUsername := clientInfo.Username
@@ -1031,6 +1113,17 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					break
 				}
 
+				if user.Banned == true {
+					banErr := ErrorMessage{
+						Type:    "error",
+						Code:    "BANNED",
+						Message: "You have been banned.",
+					}
+					log.Debug("OUT", banErr)
+					conn.WriteJSON(banErr)
+					conn.Close()
+				}
+
 				clientInfo = user
 
 				var challengeResponse ChallengeResponse
@@ -1067,7 +1160,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					identityResponse.MessageID = identityMessage.MessageID
 					identityResponse.Status = "SUCCESS"
 
-					db.Create(&Client{UUID: identityResponse.UUID, Username: "Anonymous", PowerLevel: 0})
+					db.Create(&Client{UUID: identityResponse.UUID, Username: "Anonymous", PowerLevel: 0, Banned: false})
 					log.Debug("OUT", identityResponse)
 					conn.WriteJSON(identityResponse)
 				}
