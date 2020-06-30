@@ -34,6 +34,11 @@ type ChannelPermission struct {
 	PowerLevel int       `json:"powerLevel"`
 }
 
+type ClientInfo struct {
+	Type   string `json:"type"`
+	Client Client `json:"client"`
+}
+
 type UserInfoMsg struct {
 	MessageID uuid.UUID `json:"messageID"`
 	Type      string    `json:"type"`
@@ -549,14 +554,20 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					db.Save(&userNickChgMsg)
 
-					log.Notice("requesting nick changer id is " + userMessage.ChannelID.String())
+					clientInfo.Username = userMessage.Username
+
 					for _, sub := range channelSubs {
-						log.Notice(sub.ChannelID.String() + "=" + userMessage.ChannelID.String())
 						if sub.ChannelID == userMessage.ChannelID {
 							sub.Connection.WriteJSON(userNickChgMsg)
 						}
 					}
+					// give client their user info
+					clientMsg := ClientInfo{
+						Type:   "clientInfo",
+						Client: clientInfo,
+					}
 
+					conn.WriteJSON(clientMsg)
 				}
 			case "ping":
 				var pongMsg PongMessage
@@ -948,6 +959,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							}
 							log.Debug("OUT", authResult)
 							conn.WriteJSON(authResult)
+
+							// give client their user info
+							clientMsg := ClientInfo{
+								Type:   "clientInfo",
+								Client: clientInfo,
+							}
+
+							conn.WriteJSON(clientMsg)
 
 							// send server welcome message
 							welcomeMessage := WelcomeMessage{
