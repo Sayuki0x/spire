@@ -445,12 +445,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			if err != nil {
 				scanComplete := false
 				log.Warning("Websocket connection terminated. Removing subscriptions.")
+				deletedIds := []uuid.UUID{}
 				for true {
 					if len(channelSubs) == 0 {
 						break
 					}
 					for i, sb := range channelSubs {
 						if sb.ClientID == clientInfo.UUID && sb.Connection == conn {
+							deletedIds = append(deletedIds, sb.ChannelID)
 							channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
 							break
 						}
@@ -463,6 +465,34 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						break
 					}
 				}
+
+				for _, deletedID := range deletedIds {
+					for _, channelSub := range channelSubs {
+						if channelSub.ChannelID == deletedID {
+							// broadcast the leave message
+							var usrLeaveMsg ChatMessage
+
+							db.Create(&usrLeaveMsg)
+
+							usrLeaveMsg.Type = "chat"
+							usrLeaveMsg.ChannelID = channelSub.ChannelID
+							usrLeaveMsg.MessageID = uuid.NewV4()
+							usrLeaveMsg.Method = "CREATE"
+							usrLeaveMsg.Type = "chat"
+							usrLeaveMsg.Username = "Server Message"
+							usrLeaveMsg.Message = clientInfo.Username + " has left the chat."
+
+							db.Save(&usrLeaveMsg)
+
+							for _, sub := range channelSubs {
+								if sub.ChannelID == channelSub.ChannelID {
+									sub.Connection.WriteJSON(usrLeaveMsg)
+								}
+							}
+						}
+					}
+				}
+
 				log.Debug("Subscriptions removed for " + clientInfo.UUID.String())
 				return
 			}
@@ -700,6 +730,26 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							break
 						}
 					}
+					// broadcast the leave message
+					var usrLeaveMsg ChatMessage
+
+					db.Create(&usrLeaveMsg)
+
+					usrLeaveMsg.Type = "chat"
+					usrLeaveMsg.ChannelID = channelMessage.ChannelID
+					usrLeaveMsg.MessageID = uuid.NewV4()
+					usrLeaveMsg.Method = "CREATE"
+					usrLeaveMsg.Type = "chat"
+					usrLeaveMsg.Username = "Server Message"
+					usrLeaveMsg.Message = clientInfo.Username + " has left the chat."
+
+					db.Save(&usrLeaveMsg)
+
+					for _, sub := range channelSubs {
+						if sub.ChannelID == channelMessage.ChannelID {
+							sub.Connection.WriteJSON(usrLeaveMsg)
+						}
+					}
 				}
 
 				if channelMessage.Method == "CREATE" {
@@ -846,7 +896,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					userJoinEventMsg.Method = "CREATE"
 					userJoinEventMsg.Type = "chat"
 					userJoinEventMsg.Username = "Server Message"
-					userJoinEventMsg.Message = clientInfo.Username + " has just joined the channel."
+					userJoinEventMsg.Message = clientInfo.Username + " has joined the chat."
 					db.Save(&userJoinEventMsg)
 
 					for _, sub := range channelSubs {
