@@ -42,60 +42,68 @@ type ChannelPermission struct {
 }
 
 type ClientInfo struct {
-	Type   string `json:"type"`
-	Client Client `json:"client"`
+	Type           string    `json:"type"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Client         Client    `json:"client"`
 }
 
 type UserInfoMsg struct {
-	MessageID uuid.UUID `json:"messageID"`
-	Type      string    `json:"type"`
-	Method    string    `json:"method"`
-	Username  string    `json:"username"`
-	UserTag   string    `json:"userTag"`
+	MessageID      uuid.UUID `json:"messageID"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Username       string    `json:"username"`
+	UserTag        string    `json:"userTag"`
 }
 
 type UserInfoRes struct {
-	MessageID uuid.UUID `json:"messageID"`
-	Type      string    `json:"type"`
-	Method    string    `json:"method"`
-	MatchList []Client  `json:"matchList"`
+	MessageID      uuid.UUID `json:"messageID"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	MatchList      []Client  `json:"matchList"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
 type ChannelPermMsg struct {
-	MessageID  uuid.UUID `json:"messageID"`
-	Type       string    `json:"type"`
-	Method     string    `json:"method"`
-	Permission ChannelPermission
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	Permission     ChannelPermission
 }
 
 type WelcomeMessage struct {
-	MessageID uuid.UUID `json:"messageID"`
-	Type      string    `json:"type"`
-	Message   string    `json:"message"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Type           string    `json:"type"`
+	Message        string    `json:"message"`
 }
 
 type PongMessage struct {
-	MessageID uuid.UUID `json:"messageID"`
-	Type      string    `json:"type"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Type           string    `json:"type"`
 }
 
 type HistoryReqMessage struct {
-	Type       string    `json:"type"`
-	ChannelID  uuid.UUID `json:"channelID"`
-	MessageID  uuid.UUID `json:"messageID"`
-	Method     string    `json:"method"`
-	TopMessage uuid.UUID `json:"topMessage"`
+	Type           string    `json:"type"`
+	ChannelID      uuid.UUID `json:"channelID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Method         string    `json:"method"`
+	TopMessage     uuid.UUID `json:"topMessage"`
 }
 
 type ChatMessage struct {
 	Model
-	UserID    uuid.UUID `json:"userID"`
-	Username  string    `json:"username"`
-	MessageID uuid.UUID `json:"messageID"`
-	Method    string    `json:"method"`
-	Message   string    `json:"message"`
-	ChannelID uuid.UUID `json:"channelID"`
-	Type      string    `json:"type"`
+	UserID         uuid.UUID `json:"userID"`
+	Username       string    `json:"username"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Method         string    `json:"method"`
+	Message        string    `json:"message"`
+	ChannelID      uuid.UUID `json:"channelID"`
+	Type           string    `json:"type"`
 }
 
 type Client struct {
@@ -116,61 +124,70 @@ type Channel struct {
 }
 
 type ChannelMessage struct {
-	Type      string    `json:"type"`
-	Method    string    `json:"method"`
-	ChannelID uuid.UUID `json:"channelID"`
-	MessageID uuid.UUID `json:"messageID"`
-	Private   bool      `json:"privateChannel"`
-	Name      string    `json:"name"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	ChannelID      uuid.UUID `json:"channelID"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Private        bool      `json:"privateChannel"`
+	Name           string    `json:"name"`
 }
 
 type ChannelResponse struct {
-	Type      string    `json:"type"`
-	Method    string    `json:"method"`
-	Status    string    `json:"status"`
-	ChannelID uuid.UUID `json:"channelID"`
-	Name      string    `json:"name"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	Status         string    `json:"status"`
+	ChannelID      uuid.UUID `json:"channelID"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Name           string    `json:"name"`
 }
 
 type AuthResultMessage struct {
-	Type      string    `json:"type"`
-	Status    string    `json:"status"`
-	MessageID uuid.UUID `json:"messageID"`
+	Type           string    `json:"type"`
+	Status         string    `json:"status"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
 type ChannelList struct {
-	MessageID uuid.UUID `json:"messageID"`
-	Type      string    `json:"type"`
-	Method    string    `json:"method"`
-	Status    string    `json:"status"`
-	Channels  []Channel `json:"channels"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	Status         string    `json:"status"`
+	Channels       []Channel `json:"channels"`
 }
 
 type UserMessage struct {
-	Type       string    `json:"type"`
-	Method     string    `json:"method"`
-	Username   string    `json:"username"`
-	ChannelID  uuid.UUID `json:"channelID"`
-	PowerLevel int       `json:"powerLevel"`
-	UserID     uuid.UUID `json:"userID"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	Username       string    `json:"username"`
+	ChannelID      uuid.UUID `json:"channelID"`
+	PowerLevel     int       `json:"powerLevel"`
+	UserID         uuid.UUID `json:"userID"`
 }
 
 // Message is a type for websocket messages that pass to and from server and client.
 type Message struct {
-	Type      string    `json:"type"`
-	MessageID uuid.UUID `json:"messageID"`
+	Type           string    `json:"type"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
 type SuccessMessage struct {
-	Type      string    `json:"type"`
-	MessageID uuid.UUID `json:"messageID"`
-	Status    string    `json:"status"`
+	Type           string    `json:"type"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	MessageID      uuid.UUID `json:"messageID"`
+	Status         string    `json:"status"`
 }
 
 type InfoMessage struct {
-	Type      string    `json:"type"`
-	MessageID uuid.UUID `json:"messageID"`
-	Message   string    `json:"message"`
+	Type           string    `json:"type"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	MessageID      uuid.UUID `json:"messageID"`
+	Message        string    `json:"message"`
 }
 
 type ChannelSub struct {
@@ -180,45 +197,53 @@ type ChannelSub struct {
 }
 
 type ChallengeSub struct {
-	PubKey    string    `json:"pubkey"`
-	MessageID uuid.UUID `json:"messageID"`
+	PubKey         string    `json:"pubkey"`
+	Challenge      uuid.UUID `json:"challenge"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
 type ChallengeMessage struct {
-	Type      string    `json:"type"`
-	MessageID uuid.UUID `json:"messageID"`
-	PubKey    string    `json:"pubkey"`
+	Type           string    `json:"type"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Challenge      uuid.UUID `json:"challenge"`
+	PubKey         string    `json:"pubkey"`
 }
 
 type ChallengeResponse struct {
-	Type      string    `json:"type"`
-	MessageID uuid.UUID `json:"messageID"`
-	Response  string    `json:"response"`
-	PubKey    string    `json:"pubkey"`
+	Type           string    `json:"type"`
+	MessageID      uuid.UUID `json:"messageID"`
+	Response       string    `json:"response"`
+	PubKey         string    `json:"pubkey"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
 type IdentityMessage struct {
-	Type      string    `json:"type"`
-	Method    string    `json:"method"`
-	PubKey    string    `json:"pubkey"`
-	UUID      uuid.UUID `json:"uuid"`
-	Signed    string    `json:"signed"`
-	MessageID uuid.UUID `json:"messageID"`
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	PubKey         string    `json:"pubkey"`
+	UUID           uuid.UUID `json:"uuid"`
+	Signed         string    `json:"signed"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
 type IdentityResponse struct {
-	Method    string    `json:"method"`
-	Type      string    `json:"type"`
-	MessageID uuid.UUID `json:"messageID"`
-	UUID      uuid.UUID `json:"uuid"`
-	Status    string    `json:"status"`
+	Method         string    `json:"method"`
+	Type           string    `json:"type"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	UUID           uuid.UUID `json:"uuid"`
+	Status         string    `json:"status"`
 }
 
 type ErrorMessage struct {
-	Type    string `json:"type"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Error   error  `json:"error"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	MessageID      uuid.UUID `json:"messageID"`
+	Type           string    `json:"type"`
+	Code           string    `json:"code"`
+	Message        string    `json:"message"`
+	Error          error     `json:"error"`
 }
 
 // KeyPair is a type that contains a Public and private ed25519 key.
@@ -348,7 +373,7 @@ func generateKeys() KeyPair {
 	return keys
 }
 
-func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, clientInfo Client) {
+func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, clientInfo Client, transmissionID uuid.UUID) {
 	channels := []Channel{}
 
 	db.Where("public = ?", true).Find(&channels)
@@ -375,6 +400,7 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 	var channelList ChannelList
 
 	channelList.MessageID = uuid.NewV4()
+	channelList.TransmissionID = transmissionID
 	channelList.Type = "channelListResponse"
 	channelList.Status = "SUCCESS"
 	channelList.Method = "RETRIEVE"
@@ -489,6 +515,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 			var message Message
 			json.Unmarshal(msg, &message)
 
+			transmissionID := message.TransmissionID
+
 			if message.Type == "" {
 				log.Warning("Invalid message: " + string(msg))
 				continue
@@ -510,9 +538,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				if userMessage.Method == "BAN" {
 					if clientInfo.PowerLevel < 50 {
 						permError := ErrorMessage{
-							Type:    "error",
-							Message: "You don't have a high enough power level.",
-							Code:    "PWRLVL",
+							Type:           "error",
+							Message:        "You don't have a high enough power level.",
+							TransmissionID: transmissionID,
+							Code:           "PWRLVL",
 						}
 						log.Debug("OUT", permError)
 						conn.WriteJSON(permError)
@@ -533,9 +562,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					for _, sub := range channelSubs {
 						if sub.UserID == userMessage.UserID {
 							kickErr := ErrorMessage{
-								Type:    "error",
-								Code:    "BANNED",
-								Message: "You have been banned.",
+								MessageID:      uuid.NewV4(),
+								TransmissionID: transmissionID,
+								Type:           "error",
+								Code:           "BANNED",
+								Message:        "You have been banned.",
 							}
 							log.Debug("OUT", kickErr)
 							sub.Connection.WriteJSON(kickErr)
@@ -546,9 +577,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 					log.Notice("Banned user " + userMessage.UserID.String())
 					kickSuccessMsg := InfoMessage{
-						Type:      "serverMessage",
-						MessageID: uuid.NewV4(),
-						Message:   "You have banned user " + userMessage.UserID.String(),
+						Type:           "serverMessage",
+						MessageID:      uuid.NewV4(),
+						TransmissionID: transmissionID,
+						Message:        "You have banned user " + userMessage.UserID.String(),
 					}
 					conn.WriteJSON(kickSuccessMsg)
 				}
@@ -556,8 +588,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				if userMessage.Method == "KICK" {
 					if clientInfo.PowerLevel < 50 {
 						permError := ErrorMessage{
-							Type:    "error",
-							Message: "You don't have a high enough power level.",
+							Type:           "error",
+							Message:        "You don't have a high enough power level.",
+							MessageID:      uuid.NewV4(),
+							TransmissionID: transmissionID,
 						}
 						log.Debug("OUT", permError)
 						conn.WriteJSON(permError)
@@ -567,22 +601,23 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					for _, sub := range channelSubs {
 						if sub.UserID == userMessage.UserID {
 							kickErr := ErrorMessage{
-								Type:    "error",
-								Code:    "KICKED",
-								Message: "You have been kicked.",
+								Type:           "error",
+								Code:           "KICKED",
+								Message:        "You have been kicked.",
+								MessageID:      uuid.NewV4(),
+								TransmissionID: transmissionID,
 							}
 							log.Debug("OUT", kickErr)
 							sub.Connection.WriteJSON(kickErr)
-							timer := time.NewTimer(100 * time.Millisecond)
-							<-timer.C
 							sub.Connection.Close()
 						}
 					}
 					log.Notice("Kicked user " + userMessage.UserID.String())
 					kickSuccessMsg := InfoMessage{
-						Type:      "serverMessage",
-						MessageID: uuid.NewV4(),
-						Message:   "You have kicked user " + userMessage.UserID.String(),
+						Type:           "serverMessage",
+						MessageID:      uuid.NewV4(),
+						TransmissionID: transmissionID,
+						Message:        "You have kicked user " + userMessage.UserID.String(),
 					}
 					conn.WriteJSON(kickSuccessMsg)
 				}
@@ -591,9 +626,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					if clientInfo.PowerLevel < 50 {
 						log.Warning("User does not have a high enough power level!")
 						permError := ErrorMessage{
-							Type:    "error",
-							Message: "You don't have a high enough power level.",
-							Code:    "PWRLVL",
+							Type:           "error",
+							Message:        "You don't have a high enough power level.",
+							MessageID:      uuid.NewV4(),
+							TransmissionID: transmissionID,
+							Code:           "PWRLVL",
 						}
 						log.Debug("OUT", permError)
 						conn.WriteJSON(permError)
@@ -607,9 +644,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					db.Save(&clientToUpdate)
 
 					successMsg := InfoMessage{
-						Type:      "serverMessage",
-						MessageID: uuid.NewV4(),
-						Message:   "Client has been mutated.",
+						Type:           "serverMessage",
+						MessageID:      uuid.NewV4(),
+						TransmissionID: transmissionID,
+						Message:        "Client has been mutated.",
 					}
 					conn.WriteJSON(successMsg)
 
@@ -617,8 +655,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						if sub.UserID == clientToUpdate.UserID {
 							// give client their new user info
 							clientMsg := ClientInfo{
-								Type:   "clientInfo",
-								Client: clientToUpdate,
+								Type:           "clientInfo",
+								MessageID:      uuid.NewV4(),
+								TransmissionID: transmissionID,
+								Client:         clientToUpdate,
 							}
 							conn.WriteJSON(clientMsg)
 						}
@@ -630,8 +670,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if len(userMessage.Username) > 9 {
 						nickError := ErrorMessage{
-							Type:    "error",
-							Message: "The max username length is 9 characters.",
+							Type:           "error",
+							Message:        "The max username length is 9 characters.",
+							MessageID:      uuid.NewV4(),
+							TransmissionID: transmissionID,
 						}
 						log.Debug("OUT", nickError)
 						conn.WriteJSON(nickError)
@@ -648,6 +690,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					userNickChgMsg.Type = "chat"
 					userNickChgMsg.ChannelID = userMessage.ChannelID
 					userNickChgMsg.MessageID = uuid.NewV4()
+					userNickChgMsg.TransmissionID = transmissionID
 					userNickChgMsg.Method = "CREATE"
 					userNickChgMsg.Type = "chat"
 					userNickChgMsg.Username = "Server Message"
@@ -664,15 +707,17 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 					// give client their user info
 					clientMsg := ClientInfo{
-						Type:   "clientInfo",
-						Client: clientInfo,
+						Type:           "clientInfo",
+						Client:         clientInfo,
+						MessageID:      uuid.NewV4(),
+						TransmissionID: transmissionID,
 					}
 					conn.WriteJSON(clientMsg)
 				}
 			case "ping":
 				var pongMsg PongMessage
 				json.Unmarshal(msg, &pongMsg)
-
+				pongMsg.MessageID = uuid.NewV4()
 				pongMsg.Type = "pong"
 				log.Debug("OUT", pongMsg)
 				conn.WriteJSON(pongMsg)
@@ -698,10 +743,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 
 				userInfoRes := UserInfoRes{
-					MessageID: userInfoMsg.MessageID,
-					Type:      "userInfoRes",
-					Method:    userInfoMsg.Method,
-					MatchList: matchList,
+					MessageID:      uuid.NewV4(),
+					TransmissionID: userInfoMsg.TransmissionID,
+					Type:           "userInfoRes",
+					Method:         userInfoMsg.Method,
+					MatchList:      matchList,
 				}
 				conn.WriteJSON(userInfoRes)
 			case "channelPerm":
@@ -735,6 +781,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							var challengeError ErrorMessage
 							challengeError.Type = "error"
 							challengeError.Message = "That user already has permission to that channel."
+							challengeError.TransmissionID = transmissionID
+							challengeError.MessageID = uuid.NewV4()
 							log.Debug("OUT", challengeError)
 							conn.WriteJSON(challengeError)
 							log.Warning("Duplicate permission requested.")
@@ -752,6 +800,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						var challengeError ErrorMessage
 						challengeError.Type = "error"
 						challengeError.Message = "You can't create a permission with a power level higher than yourself."
+						challengeError.TransmissionID = transmissionID
+						challengeError.MessageID = uuid.NewV4()
 						log.Debug("OUT", challengeError)
 						conn.WriteJSON(challengeError)
 						break
@@ -759,9 +809,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					db.Create(&permMsg.Permission)
 					successMsg := SuccessMessage{
-						Type:      "channelPermRes",
-						MessageID: uuid.NewV4(),
-						Status:    "SUCCESS",
+						Type:           "channelPermRes",
+						MessageID:      uuid.NewV4(),
+						TransmissionID: transmissionID,
+						Status:         "SUCCESS",
 					}
 					log.Debug("OUT", successMsg)
 					conn.WriteJSON(successMsg)
@@ -769,9 +820,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					for _, chanSub := range channelSubs {
 						if chanSub.UserID == permMsg.Permission.UserID {
 							grantMessage := InfoMessage{
-								Type:      "serverMessage",
-								MessageID: uuid.NewV4(),
-								Message:   "You have been granted access to a new channel. Check /channel ls for details.",
+								Type:           "serverMessage",
+								MessageID:      uuid.NewV4(),
+								TransmissionID: transmissionID,
+								Message:        "You have been granted access to a new channel. Check /channel ls for details.",
 							}
 							chanSub.Connection.WriteJSON(grantMessage)
 						}
@@ -789,9 +841,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							db.Delete(&perm)
 							log.Debug("Deleted user permission.")
 							successMes := InfoMessage{
-								Type:      "serverMessage",
-								MessageID: uuid.NewV4(),
-								Message:   "You have revoked permission for user " + permMsg.Permission.UserID.String(),
+								Type:           "serverMessage",
+								MessageID:      uuid.NewV4(),
+								TransmissionID: transmissionID,
+								Message:        "You have revoked permission for user " + permMsg.Permission.UserID.String(),
 							}
 							conn.WriteJSON(successMes)
 							break
@@ -800,9 +853,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if !found {
 						delErr := ErrorMessage{
-							Type:    "error",
-							Code:    "NOPERMEXISTS",
-							Message: "No permissions exist for that channel.",
+							Type:           "error",
+							Code:           "NOPERMEXISTS",
+							MessageID:      uuid.NewV4(),
+							TransmissionID: transmissionID,
+							Message:        "No permissions exist for that channel.",
 						}
 						log.Debug("OUT", delErr)
 						conn.WriteJSON(delErr)
@@ -810,9 +865,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						for _, sub := range channelSubs {
 							if sub.ChannelID == permMsg.Permission.ChannelID && sub.UserID == permMsg.Permission.UserID {
 								delErr := ErrorMessage{
-									Type:    "error",
-									Code:    "NOPERMEXISTS",
-									Message: "Your permissions to this channel have been revoked.",
+									Type:           "error",
+									Code:           "NOPERMEXISTS",
+									MessageID:      uuid.NewV4(),
+									TransmissionID: transmissionID,
+									Message:        "Your permissions to this channel have been revoked.",
 								}
 								log.Debug("OUT", delErr)
 								sub.Connection.WriteJSON(delErr)
@@ -834,6 +891,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				chatMessage.UserID = clientInfo.UserID
 				chatMessage.MessageID = uuid.NewV4()
+				chatMessage.TransmissionID = transmissionID
 				chatMessage.Username = clientInfo.Username
 
 				db.Save(&chatMessage)
@@ -871,10 +929,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						for i, sb := range channelSubs {
 							if sb.ChannelID == channelMessage.ChannelID && sb.UserID == clientInfo.UserID && sb.Connection == conn {
 								leaveMsgRes := ChannelMessage{
-									Type:      "channelLeaveMsgRes",
-									Method:    "LEAVE",
-									ChannelID: channelMessage.ChannelID,
-									MessageID: uuid.NewV4(),
+									Type:           "channelLeaveMsgRes",
+									Method:         "LEAVE",
+									ChannelID:      channelMessage.ChannelID,
+									MessageID:      uuid.NewV4(),
+									TransmissionID: transmissionID,
 								}
 								sb.Connection.WriteJSON(leaveMsgRes)
 
@@ -900,6 +959,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						var challengeError ErrorMessage
 						challengeError.Type = "error"
 						challengeError.Message = "You don't have a high enough power level."
+						challengeError.MessageID = uuid.NewV4()
+						challengeError.TransmissionID = transmissionID
 						log.Debug("OUT", challengeError)
 						conn.WriteJSON(challengeError)
 						break
@@ -921,11 +982,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 					db.Create(&newChannel)
-					sendChannelList(conn, db, log, clientInfo)
+					sendChannelList(conn, db, log, clientInfo, transmissionID)
 				}
 
 				if channelMessage.Method == "RETRIEVE" {
-					sendChannelList(conn, db, log, clientInfo)
+					sendChannelList(conn, db, log, clientInfo, transmissionID)
 				}
 
 				if channelMessage.Method == "DELETE" {
@@ -1065,38 +1126,42 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					if sub.PubKey == challengeResponse.PubKey {
 						challengeKey, _ := hex.DecodeString(sub.PubKey)
 						challengeSig, _ := hex.DecodeString(challengeResponse.Response)
-						if ed25519.Verify(challengeKey, []byte(sub.MessageID.String()), challengeSig) {
+						if ed25519.Verify(challengeKey, []byte(sub.Challenge.String()), challengeSig) {
 							log.Notice("User authorized successfully.")
 							authed = true
 
 							// give client the auth success message
 							authResult := AuthResultMessage{
-								MessageID: uuid.NewV4(),
-								Status:    "SUCCESS",
-								Type:      "authResult",
+								MessageID:      uuid.NewV4(),
+								TransmissionID: sub.TransmissionID,
+								Status:         "SUCCESS",
+								Type:           "authResult",
 							}
 							log.Debug("OUT", authResult)
 							conn.WriteJSON(authResult)
 
 							// give client their user info
 							clientMsg := ClientInfo{
-								Type:   "clientInfo",
-								Client: clientInfo,
+								Type:           "clientInfo",
+								Client:         clientInfo,
+								MessageID:      uuid.NewV4(),
+								TransmissionID: sub.TransmissionID,
 							}
 
 							conn.WriteJSON(clientMsg)
 
 							// send server welcome message
 							welcomeMessage := WelcomeMessage{
-								MessageID: uuid.NewV4(),
-								Type:      "welcomeMessage",
-								Message:   "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
+								MessageID:      uuid.NewV4(),
+								Type:           "welcomeMessage",
+								Message:        "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
+								TransmissionID: sub.TransmissionID,
 							}
 							log.Debug("OUT", welcomeMessage)
 							conn.WriteJSON(welcomeMessage)
 
 							// send the channel list
-							sendChannelList(conn, db, log, clientInfo)
+							sendChannelList(conn, db, log, clientInfo, sub.TransmissionID)
 
 							wsClients = append(wsClients, conn)
 						}
@@ -1125,9 +1190,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 
 				successMsg := SuccessMessage{
-					Type:      "historyReqRes",
-					MessageID: historyReq.MessageID,
-					Status:    "SUCCESS",
+					Type:           "historyReqRes",
+					TransmissionID: transmissionID,
+					MessageID:      uuid.NewV4(),
+					Status:         "SUCCESS",
 				}
 				log.Debug("OUT", successMsg)
 				conn.WriteJSON(successMsg)
@@ -1144,6 +1210,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					var challengeError ErrorMessage
 					challengeError.Type = "error"
 					challengeError.Message = "You need to register first!"
+					challengeError.MessageID = uuid.NewV4()
+					challengeError.TransmissionID = transmissionID
 					log.Debug("OUT", challengeError)
 					conn.WriteJSON(challengeError)
 					break
@@ -1151,9 +1219,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				if user.Banned == true {
 					banErr := ErrorMessage{
-						Type:    "error",
-						Code:    "BANNED",
-						Message: "You have been banned.",
+						Type:           "error",
+						Code:           "BANNED",
+						TransmissionID: transmissionID,
+						MessageID:      uuid.NewV4(),
+						Message:        "You have been banned.",
 					}
 					log.Debug("OUT", banErr)
 					conn.WriteJSON(banErr)
@@ -1164,8 +1234,9 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				var challengeResponse ChallengeResponse
 				challengeResponse.Type = "challengeRes"
-				challengeResponse.MessageID = challengeMessage.MessageID
-				challengeResponse.Response = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(challengeMessage.MessageID.String())))
+				challengeResponse.MessageID = uuid.NewV4()
+				challengeResponse.TransmissionID = transmissionID
+				challengeResponse.Response = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(challengeMessage.Challenge.String())))
 				challengeResponse.PubKey = hex.EncodeToString(keys.Pub)
 				log.Debug("OUT", challengeResponse)
 				conn.WriteJSON(challengeResponse)
@@ -1173,13 +1244,15 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				// challenge the client
 				var challengeToClient ChallengeMessage
 				challengeToClient.MessageID = uuid.NewV4()
+				challengeToClient.TransmissionID = transmissionID
+				challengeToClient.Challenge = uuid.NewV4()
 				challengeToClient.Type = "challenge"
 				challengeToClient.PubKey = hex.EncodeToString(keys.Pub)
 
 				var challengeSub ChallengeSub
 				challengeSub.PubKey = challengeMessage.PubKey
-				challengeSub.MessageID = challengeToClient.MessageID
-
+				challengeSub.TransmissionID = transmissionID
+				challengeSub.Challenge = challengeToClient.Challenge
 				challengeSubscriptions = append(challengeSubscriptions, challengeSub)
 
 				log.Debug("OUT", challengeToClient)
@@ -1193,7 +1266,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					identityResponse.Method = "CREATE"
 					identityResponse.Type = "identityCreateRes"
 					identityResponse.UUID = uuid.NewV4()
-					identityResponse.MessageID = identityMessage.MessageID
+					identityResponse.MessageID = uuid.NewV4()
+					identityResponse.TransmissionID = transmissionID
 					identityResponse.Status = "SUCCESS"
 
 					db.Create(&Client{UserID: identityResponse.UUID, Username: "Anonymous", PowerLevel: 0, Banned: false})
@@ -1222,7 +1296,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							var idResponse IdentityResponse
 							idResponse.Type = "identityRegisterRes"
 							idResponse.Method = "register"
-							idResponse.MessageID = identityMessage.MessageID
+							idResponse.TransmissionID = transmissionID
+							idResponse.MessageID = uuid.NewV4()
 							idResponse.Status = "SUCCESS"
 							idResponse.UUID = identityMessage.UUID
 
