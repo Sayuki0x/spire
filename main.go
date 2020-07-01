@@ -23,7 +23,7 @@ import (
 var wsClients = []*websocket.Conn{}
 var channelSubs = []*ChannelSub{}
 
-const version string = "1.0.1"
+const version string = "1.0.2"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
 
 // standard database model
