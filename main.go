@@ -1136,7 +1136,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 
 				for _, msg := range messages {
 					sendMessage(msg, conn)
-					conn.WriteJSON(msg)
 				}
 
 				successMsg := SuccessMessage{
