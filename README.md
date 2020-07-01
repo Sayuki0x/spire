@@ -44,17 +44,18 @@ we have a reference node.js cli client [here](https://github.com/ExtraHash/vex-c
 5. Start the server back up.
 6. The server is now up and running on port 8000.
 
-## API Documentation
+# API Documentation
 
 Prerequisites:
 
 - All communication with the `vex` backend takes place over a websocket connection. To interface with the API, you need a way to send and receive websocket messages to a server.
 - User identity is handled by a pair of ed25519 signing keys. You will need the ability to generate, sign, and verify signatures with ed25519 keys. For JavaScript, I recommend the excellent [tweetnacl-js](https://www.npmjs.com/package/tweetnacl) library.
 
-### Message Specification
+## Message Specification
 
 - All messages between server and client shall be in JSON format.
 - All unique keys shall be [UUID version 4](<https://en.wikipedia.org/wiki/Universally_unique_identifier#Version_4_(random)>).
+- All operations shall be based on the [CRUD model](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete).
 - All public keys and signatures send between server and client shall be in hex encoded string format.
 - All messages generated shall have a unique **transmissionID** key.
 - If a message is in reply to another message, it shall include this transmissionID.
@@ -84,7 +85,7 @@ Here's an example of one of the simplest messages you could send to the server, 
 
 Note that the transmissionID I sent to the server was included back, along with the messageID for the outbound server message and its type.
 
-### Registration
+## Registration
 
 Before we can begin sending messages to the server, we must register an identity. Connect to the websocket server and send a message with this format:
 
@@ -147,7 +148,7 @@ If the server verifies your signature, it will send back a success message.
 
 Your user is now registered and you may authenticate.
 
-### Authentication
+## Authentication
 
 First, we verify the servers identity by sending them a **challenge** in this format:
 
@@ -299,3 +300,486 @@ At this point, you should start sending ping messages to the server every ~10 se
   "type": "pong"
 }
 ```
+
+## General Server Messages
+
+There are two types of general server messages your client may receive from the server.
+
+### serverMsg
+
+Messages of type serverMsg are intended to have the **message** key displayed to the user as a notification of some kind.
+
+#### IN:
+
+```json
+{
+  "type": "serverMessage",
+  "message": "Channel deleted successfully.",
+  "transmissionID": "3cac0763-7dbe-47f4-9cab-15635ee97791",
+  "messageID": "d04cf2d9-de1a-40f0-9b62-460b409c07d0"
+}
+```
+
+### errorMsg
+
+Message of type error indicate an error occurred with the request, and will contain a code and a message to display to the user, and possibly an error object.
+
+#### IN:
+
+```json
+{
+  "transmissionID": "1ac7a4bc-2879-4eb1-bb6c-2b79c41e48e8",
+  "messageID": "fcb10d42-36ea-4a60-a2d2-882e12bc2289",
+  "type": "error",
+  "code": "PWRLVL",
+  "message": "You don't have a high enough power level.",
+  "error": null
+}
+```
+
+## Channels
+
+You can send a message of type **channel** to perform operations on channels.
+
+### CREATE
+
+#### OUT:
+
+```json
+{
+  "type": "channel",
+  "method": "CREATE",
+  "name": "test",
+  "privateChannel": true,
+  "transmissionID": "7046fdd4-8659-4940-b76e-0ad2ebac190c"
+}
+```
+
+Set the privateChannel key depending on if you want the channel to be private or public.
+If successful, the server will send back the channel list in response:
+
+#### IN:
+
+```json
+{
+  "type": "channelListResponse",
+  "method": "RETRIEVE",
+  "status": "SUCCESS",
+  "transmissionID": "7046fdd4-8659-4940-b76e-0ad2ebac190c",
+  "messageID": "8bc0d0e3-2d12-4936-aea3-890db40845b2",
+  "channels": [
+    {
+      "index": 1,
+      "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+      "admin": "be4007c7-60db-4a2b-bde4-ea41523c5c21",
+      "public": true,
+      "name": "lulz"
+    },
+    {
+      "index": 2,
+      "channelID": "e0af542a-a2ee-4186-9f55-a61f0eeaecf0",
+      "admin": "be4007c7-60db-4a2b-bde4-ea41523c5c21",
+      "public": false,
+      "name": "test"
+    }
+  ]
+}
+```
+
+### RETRIEVE
+
+#### OUT:
+
+```json
+{
+  "type": "channel",
+  "method": "RETRIEVE",
+  "transmissionID": "f063b123-9f18-42c6-8f4d-38f951488619"
+}
+```
+
+The server will respond with type channelListResponse
+
+#### IN:
+
+```json
+{
+  "type": "channelListResponse",
+  "method": "RETRIEVE",
+  "status": "SUCCESS",
+  "transmissionID": "7046fdd4-8659-4940-b76e-0ad2ebac190c",
+  "messageID": "8bc0d0e3-2d12-4936-aea3-890db40845b2",
+  "channels": [
+    {
+      "index": 1,
+      "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+      "admin": "be4007c7-60db-4a2b-bde4-ea41523c5c21",
+      "public": true,
+      "name": "lulz"
+    },
+    {
+      "index": 2,
+      "channelID": "e0af542a-a2ee-4186-9f55-a61f0eeaecf0",
+      "admin": "be4007c7-60db-4a2b-bde4-ea41523c5c21",
+      "public": false,
+      "name": "test"
+    }
+  ]
+}
+```
+
+### DELETE
+
+#### OUT:
+
+```json
+{
+  "type": "channel",
+  "method": "DELETE",
+  "channelID": "e0af542a-a2ee-4186-9f55-a61f0eeaecf0",
+  "transmissionID": "3cac0763-7dbe-47f4-9cab-15635ee97791"
+}
+```
+
+If successful, the server will respond with a message of type serverMsg
+
+```json
+{
+  "type": "serverMessage",
+  "message": "Channel deleted successfully.",
+  "transmissionID": "3cac0763-7dbe-47f4-9cab-15635ee97791",
+  "messageID": "d04cf2d9-de1a-40f0-9b62-460b409c07d0"
+}
+```
+
+### JOIN
+
+Joins a channel, subscribes to messages from it.
+
+#### OUT:
+
+```json
+{
+  "type": "channel",
+  "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+  "method": "JOIN",
+  "transmissionID": "2657440b-3329-45e3-b40b-43324f07a914"
+}
+```
+
+#### IN:
+
+```json
+{
+  "type": "channelJoinRes",
+  "method": "JOIN",
+  "status": "SUCCESS",
+  "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+  "messageID": "2a6ecc67-027d-4fae-98cf-ac487bd1d9ee",
+  "transmissionID": "2657440b-3329-45e3-b40b-43324f07a914",
+  "name": "lulz"
+}
+```
+
+### LEAVE
+
+Leaves a channel, removes subscription of messages from it.
+
+#### OUT:
+
+```json
+{
+  "type": "channel",
+  "method": "LEAVE",
+  "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+  "transmissionID": "5a107762-59f0-45bb-8ea3-6dabd8853664"
+}
+```
+
+#### IN:
+
+```json
+{
+  "type": "channelLeaveMsgRes",
+  "method": "LEAVE",
+  "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+  "messageID": "4d0478af-31df-46d6-b48f-65fe00a1c4d9",
+  "transmissionID": "5a107762-59f0-45bb-8ea3-6dabd8853664",
+  "privateChannel": false,
+  "name": ""
+}
+```
+
+The name field will always be empty in this response.
+
+## Users
+
+You can send a message of type **user** to perform operations on users.
+
+### CREATE
+
+See previous section on registration.
+
+### RETRIEVE
+
+Allows you to search for a userID with a username and a 4 digit hex tag, which is the second group of characters in their userID:
+
+username: xaz
+uuid: 03691084-**035e**-4da7-8992-2799d81b66cd
+hex tag: 035e
+
+#### OUT:
+
+```json
+{
+  "type": "userInfo",
+  "method": "RETRIEVE",
+  "transmissionID": "7045bce4-9a49-4325-9e89-85c00cc95658",
+  "userTag": "035e",
+  "username": "xaz"
+}
+```
+
+#### IN:
+
+It will reply with the matched user list, which is an array of users.
+
+```json
+{
+  "type": "userInfoRes",
+  "method": "RETRIEVE",
+  "transmissionID": "7045bce4-9a49-4325-9e89-85c00cc95658",
+  "messageID": "274d6f85-7460-43da-96e8-126c178cf607",
+  "matchList": [
+    {
+      "index": 20,
+      "pubkey": "bed7106afd77e0f92fa5aee5e29a921647582b7e38bb8cd479aed0ddd17f11eb",
+      "username": "xaz",
+      "powerLevel": 50,
+      "userID": "03691084-035e-4da7-8992-2799d81b66cd",
+      "banned": false
+    }
+  ]
+}
+```
+
+### UPDATE
+
+#### OUT:
+
+```json
+{
+  "type": "user",
+  "method": "UPDATE",
+  "transmissionID": "bb631911-3b12-4414-8c23-d9789aa49a9d",
+  "powerLevel": 25,
+  "userID": "03691084-035e-4da7-8992-2799d81b66cd"
+}
+```
+
+Currently the only mutable value is the powerLevel.
+
+#### IN:
+
+```json
+{
+  "type": "serverMessage",
+  "transmissionID": "bb631911-3b12-4414-8c23-d9789aa49a9d",
+  "messageID": "ad66ae14-9614-49e4-8acf-ce8e970c1f83",
+  "message": "Client has been mutated."
+}
+```
+
+### DELETE
+
+Not currently implemented, modify the database manually.
+
+### KICK
+
+Kicks a user (disconnects from server)
+
+#### OUT:
+
+```json
+{
+  "type": "user",
+  "method": "KICK",
+  "transmissionID": "bfc821bd-2e78-4e32-8abc-fdce837d1987",
+  "userID": "d3cff3b0-33fd-4547-b4c0-2896a2939fdf"
+}
+```
+
+#### IN:
+
+```json
+{
+  "type": "serverMessage",
+  "transmissionID": "bfc821bd-2e78-4e32-8abc-fdce837d1987",
+  "messageID": "0d8ec274-1d82-4af3-9234-ade57c47dbfa",
+  "message": "You have kicked user d3cff3b0-33fd-4547-b4c0-2896a2939fdf"
+}
+```
+
+### BAN
+
+Bans a user (permanently bans public key from accessing server)
+
+#### OUT:
+
+```json
+{
+  "type": "user",
+  "method": "BAN",
+  "transmissionID": "e56c5b95-1196-4ba2-89f9-5c3b8b0b60be",
+  "userID": "d3cff3b0-33fd-4547-b4c0-2896a2939fdf"
+}
+```
+
+#### IN:
+
+```json
+{
+  "type": "serverMessage",
+  "transmissionID": "e56c5b95-1196-4ba2-89f9-5c3b8b0b60be",
+  "messageID": "0d8ec274-1d82-4af3-9234-ade57c47dbfa",
+  "message": "You have kicked user d3cff3b0-33fd-4547-b4c0-2896a2939fdf"
+}
+```
+
+### NICK
+
+The user can only perform this operation for himself. The channelID field is optional, but if included will send a notification of the name change in that channel.
+
+#### OUT:
+
+```json
+{
+  "type": "user",
+  "method": "NICK",
+  "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+  "transmissionID": "1f0b8425-3f60-4acb-8c83-2e586d00b845",
+  "username": "test"
+}
+```
+
+#### IN:
+
+The server will respond with your updated user information:
+
+```json
+{
+  "type": "clientInfo",
+  "transmissionID": "1f0b8425-3f60-4acb-8c83-2e586d00b845",
+  "messageID": "3a3d6fc6-04d8-4e65-a651-c33a56c26233",
+  "client": {
+    "index": 12,
+    "pubkey": "518dcccf88f0d89cc5220a601b19136fb86dec6058e6ab5f803c27b97bddcbf5",
+    "username": "test",
+    "powerLevel": 100,
+    "userID": "be4007c7-60db-4a2b-bde4-ea41523c5c21",
+    "banned": false
+  }
+}
+```
+
+## channelPerms
+
+You can send a message of type **channel** to perform operations on channel permissions. If a room is marked private, the user needs to have a permission added in order to access it.
+
+### CREATE
+
+Creates a permission for a user.
+
+#### OUT:
+
+```json
+{
+  "type": "channelPerm",
+  "method": "CREATE",
+  "permission": {
+    "channelID": "e1c2cd92-b2e2-4afb-a405-efc65f20df68",
+    "powerLevel": 0,
+    "userID": "d3cff3b0-33fd-4547-b4c0-2896a2939fdf"
+  },
+  "transmissionID": "af455c20-a290-4b50-aaa5-6955726d3ba1"
+}
+```
+
+#### IN:
+
+```json
+{
+  "type": "serverMessage",
+  "transmissionID": "af455c20-a290-4b50-aaa5-6955726d3ba1",
+  "messageID": "f19ed1dc-7044-48fb-b46d-4f1493490bf7",
+  "message": "Permission added successfully."
+}
+```
+
+### RETRIEVE
+
+Not implemented. You may retrieve a channel list with your authorized channel information, see channel section.
+
+### UPDATE
+
+Not yet implemented.
+
+### DELETE
+
+Deletes a permission. Use this to revoke access to a channel. Will also kick the user if they are logged in.
+The powerLevel is not required.
+
+#### OUT:
+
+```json
+{
+  "type": "channelPerm",
+  "method": "DELETE",
+  "permission": {
+    "channelID": "e1c2cd92-b2e2-4afb-a405-efc65f20df68",
+    "powerLevel": 0,
+    "userID": "d3cff3b0-33fd-4547-b4c0-2896a2939fdf"
+  },
+  "transmissionID": "da98bec9-2c6f-411a-a2e0-fb2415589b90"
+}
+```
+
+#### IN:
+
+```json
+{
+  "type": "serverMessage",
+  "transmissionID": "da98bec9-2c6f-411a-a2e0-fb2415589b90",
+  "messageID": "b50af738-af68-4e39-bfd7-29bd18065c80",
+  "message": "You have revoked permission for user d3cff3b0-33fd-4547-b4c0-2896a2939fdf"
+}
+```
+
+## historyReq
+
+The message of type historyReq can be sent to the server to request history forwards from a known chat message ID.
+
+#### OUT
+
+```json
+{
+  "type": "historyReq",
+  "method": "RETRIEVE",
+  "channelID": "6eaedd5d-04b6-4be1-8532-246d98e05891",
+  "topMessage": "26c81ec2-b066-4535-b5fe-0560654fd07c",
+  "transmissionID": "749c3f77-c6bd-4e54-8714-934847b76946"
+}
+```
+
+The server will send all messages to you as chat messages from that point in the channel, and then reply this when finished:
+
+```json
+{
+  "type": "historyReqRes",
+  "status": "SUCCESS",
+  "transmissionID": "749c3f77-c6bd-4e54-8714-934847b76946",
+  "messageID": "9d34d5c1-fe3c-4bec-be41-58efe3ba6f0e"
+}
+```
+
+##
