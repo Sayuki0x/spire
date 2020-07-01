@@ -1206,7 +1206,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				var user Client
 				db.First(&user, "pub_key = ?", challengeMessage.PubKey)
 
-				if user.ID == 0 {
+				if user.ID == 0 || user.UserID.String() == emptyUserID {
 					var challengeError ErrorMessage
 					challengeError.Type = "error"
 					challengeError.Message = "You need to register first!"
@@ -1232,6 +1232,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				clientInfo = user
 
+				log.Notice(clientInfo)
+
 				var challengeResponse ChallengeResponse
 				challengeResponse.Type = "challengeRes"
 				challengeResponse.MessageID = uuid.NewV4()
@@ -1244,14 +1246,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				// challenge the client
 				var challengeToClient ChallengeMessage
 				challengeToClient.MessageID = uuid.NewV4()
-				challengeToClient.TransmissionID = transmissionID
+				challengeToClient.TransmissionID = uuid.NewV4()
 				challengeToClient.Challenge = uuid.NewV4()
 				challengeToClient.Type = "challenge"
 				challengeToClient.PubKey = hex.EncodeToString(keys.Pub)
 
 				var challengeSub ChallengeSub
-				challengeSub.PubKey = challengeMessage.PubKey
-				challengeSub.TransmissionID = transmissionID
+				challengeSub.PubKey = clientInfo.PubKey
+				challengeSub.TransmissionID = challengeToClient.TransmissionID
 				challengeSub.Challenge = challengeToClient.Challenge
 				challengeSubscriptions = append(challengeSubscriptions, challengeSub)
 
