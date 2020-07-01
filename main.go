@@ -1125,6 +1125,20 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				var challengeResponse ChallengeResponse
 				json.Unmarshal(msg, &challengeResponse)
 
+				if challengeResponse.TransmissionID.String() == emptyUserID {
+					versionErr := ErrorMessage{
+						Type:           "error",
+						Code:           "UNSUPPORTEDCLIENTVERSION",
+						TransmissionID: transmissionID,
+						MessageID:      uuid.NewV4(),
+						Message:        "It looks like you're probably running an old version of the client. Please upgrade with npm i -g vex-chat.",
+					}
+
+					conn.WriteJSON(versionErr)
+					conn.Close()
+					break
+				}
+
 				var clientKeys KeyPair
 				clientPubKey, _ := hex.DecodeString(challengeResponse.PubKey)
 				clientKeys.Pub = clientPubKey
@@ -1214,6 +1228,20 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				db.First(&user, "pub_key = ?", challengeMessage.PubKey)
 
 				fmt.Println(user)
+
+				if challengeMessage.TransmissionID.String() == emptyUserID {
+					versionErr := ErrorMessage{
+						Type:           "error",
+						Code:           "UNSUPPORTEDCLIENTVERSION",
+						TransmissionID: transmissionID,
+						MessageID:      uuid.NewV4(),
+						Message:        "You're running an unsupported client.\nPlease upgrade to >=1.0.0 with npm i -g vex-chat to log in.",
+					}
+
+					conn.WriteJSON(versionErr)
+					conn.Close()
+					break
+				}
 
 				if user.ID == 0 || user.UserID.String() == emptyUserID {
 					var challengeError ErrorMessage
