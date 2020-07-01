@@ -34,6 +34,13 @@ type Model struct {
 	DeletedAt *time.Time `json:"-" sql:"index"`
 }
 
+type ChatModel struct {
+	ID        uint       `json:"index" gorm:"primary_key"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"-"`
+	DeletedAt *time.Time `json:"-" sql:"index"`
+}
+
 type ChannelPermission struct {
 	gorm.Model
 	UserID     uuid.UUID `json:"userID"`
@@ -95,7 +102,7 @@ type HistoryReqMessage struct {
 }
 
 type ChatMessage struct {
-	Model
+	ChatModel
 	UserID         uuid.UUID `json:"userID"`
 	Username       string    `json:"username"`
 	MessageID      uuid.UUID `json:"messageID"`
@@ -623,7 +630,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 
 				if userMessage.Method == "UPDATE" {
-					if clientInfo.PowerLevel < 50 {
+					if clientInfo.PowerLevel != 100 {
 						log.Warning("User does not have a high enough power level!")
 						permError := ErrorMessage{
 							Type:           "error",
@@ -1205,6 +1212,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				var user Client
 				db.First(&user, "pub_key = ?", challengeMessage.PubKey)
+
+				fmt.Println(user)
 
 				if user.ID == 0 || user.UserID.String() == emptyUserID {
 					var challengeError ErrorMessage
