@@ -63,7 +63,7 @@ Prerequisites:
 
 Here's an example of one of the simplest messages you could send to the server, a "ping" message, as well as the expected reply.
 
-OUT:
+#### OUT:
 
 ```json
 {
@@ -72,7 +72,7 @@ OUT:
 }
 ```
 
-IN:
+#### IN:
 
 ```json
 {
@@ -88,7 +88,7 @@ Note that the transmissionID I sent to the server was included back, along with 
 
 Before we can begin sending messages to the server, we must register an identity. Connect to the websocket server and send a message with this format:
 
-OUT:
+#### OUT:
 
 ```json
 {
@@ -100,7 +100,7 @@ OUT:
 
 The server will reply with a userID that you will use to identify yourself to the server. Store this information.
 
-IN:
+#### IN:
 
 ```json
 {
@@ -115,7 +115,7 @@ IN:
 
 The user ID we need is the key **uuid** in this response. Take the uuid, and sign it with your signing key, and send it back to the server along with the signature in a message with this format. (Note this is a new transmission, so a new transmissionID is generated.)
 
-OUT:
+#### OUT:
 
 ```json
 {
@@ -132,7 +132,7 @@ Note that the **signed** key must contain your the signature of the signed UUID,
 
 If the server verifies your signature, it will send back a success message.
 
-IN:
+#### IN:
 
 ```json
 {
@@ -151,7 +151,7 @@ Your user is now registered and you may authenticate.
 
 First, we verify the servers identity by sending them a **challenge** in this format:
 
-OUT:
+#### OUT:
 
 ```json
 {
@@ -165,7 +165,7 @@ OUT:
 You must have previously registered your pubkey with the server and received a valid userID.
 The server will sign the challenge, and send it back like this:
 
-IN:
+#### IN:
 
 ```json
 {
@@ -181,7 +181,7 @@ If this is the first time you've connected to the server, store its pubkey. Othe
 
 The server will also send you a challenge in the same format:
 
-IN:
+#### IN:
 
 ```json
 {
@@ -197,7 +197,7 @@ Note the transmissionID here is not the same as the previous challenge, because 
 
 Sign the _challenge_ key with your private key and send it back to the server like this:
 
-OUT:
+#### OUT:
 
 ```json
 {
@@ -210,7 +210,7 @@ OUT:
 
 If your signature verifies and matches a registered user's pubkey, you will be sent an authResult success message as well as several other informational messages:
 
-IN:
+#### IN:
 
 ```json
 {
@@ -223,7 +223,7 @@ IN:
 
 This message indicates you have authorized successfully.
 
-IN:
+#### IN:
 
 ```json
 {
@@ -243,7 +243,7 @@ IN:
 
 This message contains your client information.
 
-IN:
+#### IN:
 
 ```json
 {
@@ -256,7 +256,7 @@ IN:
 
 This is the server's welcome message.
 
-IN:
+#### IN:
 
 ```json
 {
@@ -281,7 +281,7 @@ This message contains all channels you have access to.
 
 At this point, you should start sending ping messages to the server every ~10 seconds to verify the connection is still up.
 
-OUT:
+#### OUT:
 
 ```json
 {
@@ -290,7 +290,7 @@ OUT:
 }
 ```
 
-IN:
+#### IN:
 
 ```json
 {
