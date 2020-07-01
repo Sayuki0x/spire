@@ -581,10 +581,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				if userMessage.Method == "UPDATE" {
 					oldUsername := clientInfo.Username
 
-					if len(userMessage.Username) > 12 {
+					if len(userMessage.Username) > 9 {
 						nickError := ErrorMessage{
 							Type:    "error",
-							Message: "The max username length is 12 characters.",
+							Message: "The max username length is 9 characters.",
 						}
 						log.Debug("OUT", nickError)
 						conn.WriteJSON(nickError)
