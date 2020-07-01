@@ -27,6 +27,13 @@ var channelSubs = []*ChannelSub{}
 const version string = "0.4.1"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
 
+type Model struct {
+	ID        uint       `json:"index" gorm:"primary_key"`
+	CreatedAt time.Time  `json:"-"`
+	UpdatedAt time.Time  `json:"-"`
+	DeletedAt *time.Time `json:"-" sql:"index"`
+}
+
 type ChannelPermission struct {
 	gorm.Model
 	UserID     uuid.UUID `json:"userID"`
@@ -55,10 +62,10 @@ type UserInfoRes struct {
 }
 
 type ChannelPermMsg struct {
-	MessageID  uuid.UUID         `json:"messageID"`
-	Type       string            `json:"type"`
-	Method     string            `json:"method"`
-	Permission ChannelPermission `json:"permission"`
+	MessageID  uuid.UUID `json:"messageID"`
+	Type       string    `json:"type"`
+	Method     string    `json:"method"`
+	Permission ChannelPermission
 }
 
 type WelcomeMessage struct {
@@ -81,7 +88,7 @@ type HistoryReqMessage struct {
 }
 
 type ChatMessage struct {
-	gorm.Model
+	Model
 	UserID    uuid.UUID `json:"userID"`
 	Username  string    `json:"username"`
 	MessageID uuid.UUID `json:"messageID"`
@@ -92,16 +99,16 @@ type ChatMessage struct {
 }
 
 type Client struct {
-	gorm.Model
-	PubKey     string
-	Username   string
-	PowerLevel int
-	UUID       uuid.UUID
-	Banned     bool
+	Model
+	PubKey     string    `json:"pubkey"`
+	Username   string    `json:"username"`
+	PowerLevel int       `json:"powerLevel"`
+	UserID     uuid.UUID `json:"userID"`
+	Banned     bool      `json:"banned"`
 }
 
 type Channel struct {
-	gorm.Model
+	Model
 	ChannelID uuid.UUID `json:"channelID"`
 	Admin     uuid.UUID `json:"admin"`
 	Public    bool      `json:"public"`
@@ -140,11 +147,12 @@ type ChannelList struct {
 }
 
 type UserMessage struct {
-	Type      string    `json:"type"`
-	Method    string    `json:"method"`
-	Username  string    `json:"username"`
-	ChannelID uuid.UUID `json:"channelID"`
-	UserID    uuid.UUID `json:"userID"`
+	Type       string    `json:"type"`
+	Method     string    `json:"method"`
+	Username   string    `json:"username"`
+	ChannelID  uuid.UUID `json:"channelID"`
+	PowerLevel int       `json:"powerLevel"`
+	UserID     uuid.UUID `json:"userID"`
 }
 
 // Message is a type for websocket messages that pass to and from server and client.
@@ -166,14 +174,14 @@ type InfoMessage struct {
 }
 
 type ChannelSub struct {
-	ClientID   uuid.UUID
-	ChannelID  uuid.UUID
-	Connection *websocket.Conn
+	UserID     uuid.UUID       `json:"userID"`
+	ChannelID  uuid.UUID       `json:"channelID"`
+	Connection *websocket.Conn `json:"-"`
 }
 
 type ChallengeSub struct {
-	PubKey    string
-	MessageID uuid.UUID
+	PubKey    string    `json:"pubkey"`
+	MessageID uuid.UUID `json:"messageID"`
 }
 
 type ChallengeMessage struct {
@@ -347,7 +355,7 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 
 	channelPerms := []ChannelPermission{}
 
-	db.Where("user_id = ?", clientInfo.UUID).Find(&channelPerms)
+	db.Where("user_id = ?", clientInfo.UserID).Find(&channelPerms)
 
 	for _, perm := range channelPerms {
 		var privChannel Channel
@@ -459,7 +467,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						break
 					}
 					for i, sb := range channelSubs {
-						if sb.ClientID == clientInfo.UUID && sb.Connection == conn {
+						if sb.UserID == clientInfo.UserID && sb.Connection == conn {
 							deletedIds = append(deletedIds, sb.ChannelID)
 							channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
 							break
@@ -474,7 +482,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 				}
 
-				log.Debug("Subscriptions removed for " + clientInfo.UUID.String())
+				log.Debug("Subscriptions removed for " + clientInfo.UserID.String())
 				return
 			}
 
@@ -504,6 +512,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						permError := ErrorMessage{
 							Type:    "error",
 							Message: "You don't have a high enough power level.",
+							Code:    "PWRLVL",
 						}
 						log.Debug("OUT", permError)
 						conn.WriteJSON(permError)
@@ -511,7 +520,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 					var bannedUser Client
-					db.First(&bannedUser, "uuid = ?", userMessage.UserID)
+					db.First(&bannedUser, "user_id = ?", userMessage.UserID)
 
 					if bannedUser.ID == 0 {
 						log.Warning("Requested ban to user that does not exist.")
@@ -522,7 +531,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					db.Save(&bannedUser)
 
 					for _, sub := range channelSubs {
-						if sub.ClientID == userMessage.UserID {
+						if sub.UserID == userMessage.UserID {
 							kickErr := ErrorMessage{
 								Type:    "error",
 								Code:    "BANNED",
@@ -556,7 +565,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 					for _, sub := range channelSubs {
-						if sub.ClientID == userMessage.UserID {
+						if sub.UserID == userMessage.UserID {
 							kickErr := ErrorMessage{
 								Type:    "error",
 								Code:    "KICKED",
@@ -579,6 +588,44 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				}
 
 				if userMessage.Method == "UPDATE" {
+					if clientInfo.PowerLevel < 50 {
+						log.Warning("User does not have a high enough power level!")
+						permError := ErrorMessage{
+							Type:    "error",
+							Message: "You don't have a high enough power level.",
+							Code:    "PWRLVL",
+						}
+						log.Debug("OUT", permError)
+						conn.WriteJSON(permError)
+						break
+					}
+
+					var clientToUpdate Client
+
+					db.First(&clientToUpdate, "user_id = ?", userMessage.UserID)
+					clientToUpdate.PowerLevel = userMessage.PowerLevel
+					db.Save(&clientToUpdate)
+
+					successMsg := InfoMessage{
+						Type:      "serverMessage",
+						MessageID: uuid.NewV4(),
+						Message:   "Client has been mutated.",
+					}
+					conn.WriteJSON(successMsg)
+
+					for _, sub := range channelSubs {
+						if sub.UserID == clientToUpdate.UserID {
+							// give client their new user info
+							clientMsg := ClientInfo{
+								Type:   "clientInfo",
+								Client: clientToUpdate,
+							}
+							conn.WriteJSON(clientMsg)
+						}
+					}
+				}
+				// can only be used by yourself
+				if userMessage.Method == "NICK" {
 					oldUsername := clientInfo.Username
 
 					if len(userMessage.Username) > 9 {
@@ -593,7 +640,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					db.Model(&clientInfo).Update("username", userMessage.Username)
 					clientInfo.Username = userMessage.Username
-
 					// broadcast the nick change message
 					var userNickChgMsg ChatMessage
 
@@ -621,7 +667,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						Type:   "clientInfo",
 						Client: clientInfo,
 					}
-
 					conn.WriteJSON(clientMsg)
 				}
 			case "ping":
@@ -646,7 +691,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				matchList := []Client{}
 
 				for _, usr := range userList {
-					tag := usr.UUID.String()[9:13]
+					tag := usr.UserID.String()[9:13]
 					if tag == userInfoMsg.UserTag {
 						matchList = append(matchList, usr)
 					}
@@ -677,7 +722,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					// if it's the empty uuid
 					if permMsg.Permission.UserID.String() == emptyUserID {
-						log.Warning("Create message went without UUID, UUID is a required parameter.")
+						log.Warning("CREATE channelPerm sent without UUID, UUID is a required parameter.")
 						break
 					}
 
@@ -722,7 +767,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					conn.WriteJSON(successMsg)
 
 					for _, chanSub := range channelSubs {
-						if chanSub.ClientID == permMsg.Permission.UserID {
+						if chanSub.UserID == permMsg.Permission.UserID {
 							grantMessage := InfoMessage{
 								Type:      "serverMessage",
 								MessageID: uuid.NewV4(),
@@ -763,7 +808,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						conn.WriteJSON(delErr)
 					} else {
 						for _, sub := range channelSubs {
-							if sub.ChannelID == permMsg.Permission.ChannelID && sub.ClientID == permMsg.Permission.UserID {
+							if sub.ChannelID == permMsg.Permission.ChannelID && sub.UserID == permMsg.Permission.UserID {
 								delErr := ErrorMessage{
 									Type:    "error",
 									Code:    "NOPERMEXISTS",
@@ -787,7 +832,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				db.Create(&chatMessage)
 
-				chatMessage.UserID = clientInfo.UUID
+				chatMessage.UserID = clientInfo.UserID
 				chatMessage.MessageID = uuid.NewV4()
 				chatMessage.Username = clientInfo.Username
 
@@ -824,7 +869,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						scanCompleted := false
 						fmt.Println(channelMessage)
 						for i, sb := range channelSubs {
-							if sb.ChannelID == channelMessage.ChannelID && sb.ClientID == clientInfo.UUID && sb.Connection == conn {
+							if sb.ChannelID == channelMessage.ChannelID && sb.UserID == clientInfo.UserID && sb.Connection == conn {
 								leaveMsgRes := ChannelMessage{
 									Type:      "channelLeaveMsgRes",
 									Method:    "LEAVE",
@@ -862,14 +907,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					var newChannel Channel
 					newChannel.ChannelID = uuid.NewV4()
-					newChannel.Admin = clientInfo.UUID
+					newChannel.Admin = clientInfo.UserID
 					newChannel.Public = !channelMessage.Private
 					newChannel.Name = channelMessage.Name
 
 					if !newChannel.Public {
 						var channelPerm ChannelPermission
 						db.Create(&channelPerm)
-						channelPerm.UserID = clientInfo.UUID
+						channelPerm.UserID = clientInfo.UserID
 						channelPerm.ChannelID = newChannel.ChannelID
 						channelPerm.PowerLevel = 100
 						db.Save(&channelPerm)
@@ -908,7 +953,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Message:   "The channel has been deleted.",
 							}
 
-							if sub.ClientID != clientInfo.UUID {
+							if sub.UserID != clientInfo.UserID {
 								sub.Connection.WriteJSON(delMsg)
 							}
 							scanComplete := false
@@ -950,7 +995,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						hasPermission := false
 
 						cPerms := []ChannelPermission{}
-						db.Where("user_id = ?", clientInfo.UUID).Find(&cPerms)
+						db.Where("user_id = ?", clientInfo.UserID).Find(&cPerms)
 
 						for _, perm := range cPerms {
 							if perm.ChannelID == requestedChannel.ChannelID {
@@ -960,6 +1005,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 						if !hasPermission {
 							log.Warning("User is requesting access to channel he does not have permission to.")
+							prmErr := ErrorMessage{
+								Type:    "error",
+								Code:    "NOACCESS",
+								Message: "You don't have permission to that.",
+							}
+							log.Debug("OUT", prmErr)
+							conn.WriteJSON(prmErr)
 							break
 						}
 					}
@@ -971,7 +1023,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					duplicate := false
 					for _, sub := range channelSubs {
-						if sub.ChannelID == channelMessage.ChannelID && sub.ClientID == clientInfo.UUID && sub.Connection == conn {
+						if sub.ChannelID == channelMessage.ChannelID && sub.UserID == clientInfo.UserID && sub.Connection == conn {
 							log.Warning("Duplicate subscription from client, not adding.")
 							duplicate = true
 							break
@@ -983,7 +1035,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 					var newSub ChannelSub
-					newSub.ClientID = clientInfo.UUID
+					newSub.UserID = clientInfo.UserID
 					newSub.ChannelID = requestedChannel.ChannelID
 					newSub.Connection = conn
 
@@ -1144,7 +1196,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					identityResponse.MessageID = identityMessage.MessageID
 					identityResponse.Status = "SUCCESS"
 
-					db.Create(&Client{UUID: identityResponse.UUID, Username: "Anonymous", PowerLevel: 0, Banned: false})
+					db.Create(&Client{UserID: identityResponse.UUID, Username: "Anonymous", PowerLevel: 0, Banned: false})
 					log.Debug("OUT", identityResponse)
 					conn.WriteJSON(identityResponse)
 				}
@@ -1156,7 +1208,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if ed25519.Verify(clientKeyPair.Pub, []byte(identityMessage.UUID.String()), sig) {
 						var newClient Client
-						db.First(&newClient, "uuid = ?", identityMessage.UUID.String())
+						db.First(&newClient, "user_id = ?", identityMessage.UUID.String())
 
 						if newClient.ID == 0 {
 							log.Warning("UUID does not exist in database.")
