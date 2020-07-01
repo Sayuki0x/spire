@@ -1238,7 +1238,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 							db.Model(&newClient).Update("PubKey", identityMessage.PubKey)
 							var idResponse IdentityResponse
 							idResponse.Type = "identityRegisterRes"
-							idResponse.Method = "register"
+							idResponse.Method = "REGISTER"
 							idResponse.TransmissionID = transmissionID
 							idResponse.MessageID = uuid.NewV4()
 							idResponse.Status = "SUCCESS"
