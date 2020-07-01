@@ -25,7 +25,7 @@ var wsClients = []*websocket.Conn{}
 var channelSubs = []*ChannelSub{}
 
 const version string = "0.4.0"
-const serverUserID = "00000000-0000-0000-0000-000000000000"
+const emptyUserID = "00000000-0000-0000-0000-000000000000"
 
 type ChannelPermission struct {
 	gorm.Model
@@ -474,33 +474,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 				}
 
-				for _, deletedID := range deletedIds {
-					for _, channelSub := range channelSubs {
-						if channelSub.ChannelID == deletedID {
-							// broadcast the leave message
-							var usrLeaveMsg ChatMessage
-
-							db.Create(&usrLeaveMsg)
-
-							usrLeaveMsg.Type = "chat"
-							usrLeaveMsg.ChannelID = channelSub.ChannelID
-							usrLeaveMsg.MessageID = uuid.NewV4()
-							usrLeaveMsg.Method = "CREATE"
-							usrLeaveMsg.Type = "chat"
-							usrLeaveMsg.Username = "Server Message"
-							usrLeaveMsg.Message = clientInfo.Username + " has left the chat."
-
-							db.Save(&usrLeaveMsg)
-
-							for _, sub := range channelSubs {
-								if sub.ChannelID == channelSub.ChannelID {
-									sub.Connection.WriteJSON(usrLeaveMsg)
-								}
-							}
-						}
-					}
-				}
-
 				log.Debug("Subscriptions removed for " + clientInfo.UUID.String())
 				return
 			}
@@ -703,7 +676,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				if permMsg.Method == "CREATE" {
 
 					// if it's the empty uuid
-					if permMsg.Permission.UserID.String() == serverUserID {
+					if permMsg.Permission.UserID.String() == emptyUserID {
 						log.Warning("Create message went without UUID, UUID is a required parameter.")
 						break
 					}
@@ -759,6 +732,50 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						}
 					}
 				}
+
+				if permMsg.Method == "DELETE" {
+					cPerms := []ChannelPermission{}
+					db.Where("user_id = ?", permMsg.Permission.UserID).Find(&cPerms)
+
+					found := false
+					for _, perm := range cPerms {
+						if perm.ChannelID == permMsg.Permission.ChannelID {
+							found = true
+							db.Delete(&perm)
+							log.Debug("Deleted user permission.")
+							successMes := InfoMessage{
+								Type:      "serverMessage",
+								MessageID: uuid.NewV4(),
+								Message:   "You have revoked permission for user " + permMsg.Permission.UserID.String(),
+							}
+							conn.WriteJSON(successMes)
+							break
+						}
+					}
+
+					if !found {
+						delErr := ErrorMessage{
+							Type:    "error",
+							Code:    "NOPERMEXISTS",
+							Message: "No permissions exist for that channel.",
+						}
+						log.Debug("OUT", delErr)
+						conn.WriteJSON(delErr)
+					} else {
+						for _, sub := range channelSubs {
+							if sub.ChannelID == permMsg.Permission.ChannelID && sub.ClientID == permMsg.Permission.UserID {
+								delErr := ErrorMessage{
+									Type:    "error",
+									Code:    "NOPERMEXISTS",
+									Message: "Your permissions to this channel have been revoked.",
+								}
+								log.Debug("OUT", delErr)
+								sub.Connection.WriteJSON(delErr)
+								sub.Connection.Close()
+							}
+						}
+					}
+				}
 			case "chat":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -776,11 +793,17 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				db.Save(&chatMessage)
 
-				log.Debug("BROADCAST", chatMessage)
+				found := false
 				for _, sub := range channelSubs {
 					if sub.ChannelID == chatMessage.ChannelID {
 						sub.Connection.WriteJSON(chatMessage)
+						found = true
 					}
+				}
+				if found {
+					log.Debug("BROADCAST", chatMessage)
+				} else {
+					log.Warning("Client is sending message to channel that is not active.")
 				}
 
 			case "channel":
@@ -821,26 +844,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						}
 						if scanCompleted {
 							break
-						}
-					}
-					// broadcast the leave message
-					var usrLeaveMsg ChatMessage
-
-					db.Create(&usrLeaveMsg)
-
-					usrLeaveMsg.Type = "chat"
-					usrLeaveMsg.ChannelID = channelMessage.ChannelID
-					usrLeaveMsg.MessageID = uuid.NewV4()
-					usrLeaveMsg.Method = "CREATE"
-					usrLeaveMsg.Type = "chat"
-					usrLeaveMsg.Username = "Server Message"
-					usrLeaveMsg.Message = clientInfo.Username + " has left the chat."
-
-					db.Save(&usrLeaveMsg)
-
-					for _, sub := range channelSubs {
-						if sub.ChannelID == channelMessage.ChannelID {
-							sub.Connection.WriteJSON(usrLeaveMsg)
 						}
 					}
 				}
@@ -977,25 +980,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if duplicate {
 						break
-					}
-
-					// broadcast the join message
-					var userJoinEventMsg ChatMessage
-
-					db.Create(&userJoinEventMsg)
-					userJoinEventMsg.Type = "chat"
-					userJoinEventMsg.MessageID = uuid.NewV4()
-					userJoinEventMsg.ChannelID = channelMessage.ChannelID
-					userJoinEventMsg.Method = "CREATE"
-					userJoinEventMsg.Type = "chat"
-					userJoinEventMsg.Username = "Server Message"
-					userJoinEventMsg.Message = clientInfo.Username + " has joined the chat."
-					db.Save(&userJoinEventMsg)
-
-					for _, sub := range channelSubs {
-						if sub.ChannelID == requestedChannel.ChannelID {
-							sub.Connection.WriteJSON(userJoinEventMsg)
-						}
 					}
 
 					var newSub ChannelSub
