@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -27,6 +26,7 @@ var channelSubs = []*ChannelSub{}
 const version string = "1.0.0"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
 
+// standard database model
 type Model struct {
 	ID        uint       `json:"index" gorm:"primary_key"`
 	CreatedAt time.Time  `json:"-"`
@@ -34,6 +34,7 @@ type Model struct {
 	DeletedAt *time.Time `json:"-" sql:"index"`
 }
 
+// modified database model to send created at in json
 type ChatModel struct {
 	ID        uint       `json:"index" gorm:"primary_key"`
 	CreatedAt time.Time  `json:"createdAt"`
@@ -41,8 +42,9 @@ type ChatModel struct {
 	DeletedAt *time.Time `json:"-" sql:"index"`
 }
 
+// database model
 type ChannelPermission struct {
-	gorm.Model
+	Model
 	UserID     uuid.UUID `json:"userID"`
 	ChannelID  uuid.UUID `json:"channelID"`
 	PowerLevel int       `json:"powerLevel"`
@@ -266,6 +268,34 @@ type App struct {
 	Log    *logging.Logger
 }
 
+func sendMessage(msg interface{}, conn *websocket.Conn) {
+	jsonMessage, _ := json.Marshal(msg)
+	log.Debug("OUT", string(jsonMessage))
+
+	conn.WriteJSON(msg)
+}
+
+func sendError(code string, message string, conn *websocket.Conn, transmissionID uuid.UUID) {
+	err := ErrorMessage{
+		Type:           "error",
+		Message:        message,
+		MessageID:      uuid.NewV4(),
+		TransmissionID: transmissionID,
+		Code:           code,
+	}
+	sendMessage(err, conn)
+}
+
+func sendSuccess(Message string, conn *websocket.Conn, transmissionID uuid.UUID) {
+	success := InfoMessage{
+		Type:           "serverMessage",
+		MessageID:      uuid.NewV4(),
+		TransmissionID: transmissionID,
+		Message:        Message,
+	}
+	sendMessage(success, conn)
+}
+
 func printAscii(log *logging.Logger) {
 	fmt.Printf("\033[35mvvvvvvv           vvvvvvv    eeeeeeeeeeee    xxxxxxx      xxxxxxx\n" +
 		" v:::::v         v:::::v   ee::::::::::::ee   x:::::x    x:::::x \n" +
@@ -297,6 +327,32 @@ func checkConfig(log *logging.Logger) {
 	}
 }
 
+func broadcast(db *gorm.DB, chatMessage ChatMessage, clientInfo Client, transmissionID uuid.UUID) {
+	db.Create(&chatMessage)
+
+	chatMessage.UserID = clientInfo.UserID
+	chatMessage.MessageID = uuid.NewV4()
+	chatMessage.TransmissionID = transmissionID
+	chatMessage.Username = clientInfo.Username
+
+	db.Save(&chatMessage)
+
+	found := false
+	for _, sub := range channelSubs {
+		if sub.ChannelID == chatMessage.ChannelID {
+			sub.Connection.WriteJSON(chatMessage)
+			found = true
+		}
+	}
+	if found {
+		byteResponse, _ := json.Marshal(chatMessage)
+		log.Debug("BROADCAST", string(byteResponse))
+	} else {
+		log.Warning("Client is sending message to channel that is not active.")
+		db.Delete(&chatMessage)
+	}
+}
+
 func createKeyFiles(log *logging.Logger) {
 	log.Debug("Creating keyfiles.")
 	_, pubKeyErr := os.Stat("config/key.pub")
@@ -310,8 +366,8 @@ func createKeyFiles(log *logging.Logger) {
 
 	keys := generateKeys()
 
-	writeBytesToFile("config/key.pub", keys.Pub, log)
-	writeBytesToFile("config/key.priv", keys.Priv, log)
+	writeBytesToFile("config/key.pub", keys.Pub)
+	writeBytesToFile("config/key.priv", keys.Priv)
 }
 
 func checkKeys(log *logging.Logger) KeyPair {
@@ -323,18 +379,20 @@ func checkKeys(log *logging.Logger) KeyPair {
 
 	var keys KeyPair
 
-	keys.Pub = readBytesFromFile("config/key.pub", log)
-	keys.Priv = readBytesFromFile("config/key.priv", log)
+	keys.Pub = readBytesFromFile("config/key.pub")
+	keys.Priv = readBytesFromFile("config/key.priv")
 
 	log.Info("Server Public key " + hex.EncodeToString(keys.Pub))
 
 	return keys
 }
 
+var log *logging.Logger = logging.MustGetLogger("vex")
+
 // Initialize does the initialization of App.
 func (a *App) Initialize() {
 	//initialize logger
-	var log = logging.MustGetLogger("vex")
+
 	var format = logging.MustStringFormatter(
 		`%{color}%{time:15:04:05.000} ▶ %{level:.4s}%{color:reset} %{message}`,
 	)
@@ -362,7 +420,7 @@ func (a *App) Initialize() {
 
 	// initialize router
 	router := mux.NewRouter()
-	router.Handle("/socket", SocketHandler(keys, db, log)).Methods("GET")
+	router.Handle("/socket", SocketHandler(keys, db)).Methods("GET")
 	a.Router = router
 }
 
@@ -380,7 +438,7 @@ func generateKeys() KeyPair {
 	return keys
 }
 
-func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, clientInfo Client, transmissionID uuid.UUID) {
+func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, transmissionID uuid.UUID) {
 	channels := []Channel{}
 
 	db.Where("public = ?", true).Find(&channels)
@@ -413,11 +471,10 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, log *logging.Logger, cli
 	channelList.Method = "RETRIEVE"
 	channelList.Channels = orderedChannels
 
-	log.Debug("OUT", channelList)
-	conn.WriteJSON(channelList)
+	sendMessage(channelList, conn)
 }
 
-func readBytesFromFile(filename string, log *logging.Logger) []byte {
+func readBytesFromFile(filename string) []byte {
 	// Open file for reading
 	file, openErr := os.Open(filename)
 	if openErr != nil {
@@ -434,7 +491,7 @@ func readBytesFromFile(filename string, log *logging.Logger) []byte {
 	return bytes
 }
 
-func writeBytesToFile(filename string, bytes []byte, log *logging.Logger) bool {
+func writeBytesToFile(filename string, bytes []byte) bool {
 	file, openErr := os.OpenFile(filename, os.O_RDWR, 0700)
 	if openErr != nil {
 		log.Fatal("Error opening file " + filename + " for writing.")
@@ -467,7 +524,7 @@ func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
 }
 
 // SocketHandler handles the websocket connection messages and responses.
-func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler {
+func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		var upgrader = websocket.Upgrader{
@@ -478,7 +535,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 		upgrader.CheckOrigin = func(req *http.Request) bool { return true }
 
 		conn, _ := upgrader.Upgrade(res, req, nil)
-		log.Notice("Incoming websocket connection.")
+		log.Info("Incoming websocket connection.")
 
 		challengeSubscriptions := []ChallengeSub{}
 		joinedChannelIDs := []uuid.UUID{}
@@ -529,7 +586,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				continue
 			}
 
-			log.Debug("IN", string(msg))
+			log.Notice("IN", string(msg))
 
 			switch message.Type {
 			case "user":
@@ -544,14 +601,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 				if userMessage.Method == "BAN" {
 					if clientInfo.PowerLevel < 50 {
-						permError := ErrorMessage{
-							Type:           "error",
-							Message:        "You don't have a high enough power level.",
-							TransmissionID: transmissionID,
-							Code:           "PWRLVL",
-						}
-						log.Debug("OUT", permError)
-						conn.WriteJSON(permError)
+						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
 
@@ -568,40 +618,17 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					for _, sub := range channelSubs {
 						if sub.UserID == userMessage.UserID {
-							kickErr := ErrorMessage{
-								MessageID:      uuid.NewV4(),
-								TransmissionID: transmissionID,
-								Type:           "error",
-								Code:           "BANNED",
-								Message:        "You have been banned.",
-							}
-							log.Debug("OUT", kickErr)
-							sub.Connection.WriteJSON(kickErr)
-							timer := time.NewTimer(100 * time.Millisecond)
-							<-timer.C
+							sendError("BANNED", "You have been banned.", sub.Connection, transmissionID)
 							sub.Connection.Close()
 						}
 					}
-					log.Notice("Banned user " + userMessage.UserID.String())
-					kickSuccessMsg := InfoMessage{
-						Type:           "serverMessage",
-						MessageID:      uuid.NewV4(),
-						TransmissionID: transmissionID,
-						Message:        "You have banned user " + userMessage.UserID.String(),
-					}
-					conn.WriteJSON(kickSuccessMsg)
+					log.Info("Banned user " + userMessage.UserID.String())
+					sendSuccess("You have banned user "+userMessage.UserID.String(), conn, transmissionID)
 				}
 
 				if userMessage.Method == "KICK" {
 					if clientInfo.PowerLevel < 50 {
-						permError := ErrorMessage{
-							Type:           "error",
-							Message:        "You don't have a high enough power level.",
-							MessageID:      uuid.NewV4(),
-							TransmissionID: transmissionID,
-						}
-						log.Debug("OUT", permError)
-						conn.WriteJSON(permError)
+						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
 
@@ -614,19 +641,18 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								MessageID:      uuid.NewV4(),
 								TransmissionID: transmissionID,
 							}
-							log.Debug("OUT", kickErr)
-							sub.Connection.WriteJSON(kickErr)
+							sendMessage(kickErr, sub.Connection)
 							sub.Connection.Close()
 						}
 					}
-					log.Notice("Kicked user " + userMessage.UserID.String())
+					log.Info("Kicked user " + userMessage.UserID.String())
 					kickSuccessMsg := InfoMessage{
 						Type:           "serverMessage",
 						MessageID:      uuid.NewV4(),
 						TransmissionID: transmissionID,
 						Message:        "You have kicked user " + userMessage.UserID.String(),
 					}
-					conn.WriteJSON(kickSuccessMsg)
+					sendMessage(kickSuccessMsg, conn)
 				}
 
 				if userMessage.Method == "UPDATE" {
@@ -639,8 +665,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							TransmissionID: transmissionID,
 							Code:           "PWRLVL",
 						}
-						log.Debug("OUT", permError)
-						conn.WriteJSON(permError)
+						sendMessage(permError, conn)
 						break
 					}
 
@@ -656,7 +681,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						TransmissionID: transmissionID,
 						Message:        "Client has been mutated.",
 					}
-					conn.WriteJSON(successMsg)
+					sendMessage(successMsg, conn)
 
 					for _, sub := range channelSubs {
 						if sub.UserID == clientToUpdate.UserID {
@@ -667,7 +692,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								TransmissionID: transmissionID,
 								Client:         clientToUpdate,
 							}
-							conn.WriteJSON(clientMsg)
+							sendMessage(clientMsg, conn)
 						}
 					}
 				}
@@ -682,8 +707,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							MessageID:      uuid.NewV4(),
 							TransmissionID: transmissionID,
 						}
-						log.Debug("OUT", nickError)
-						conn.WriteJSON(nickError)
+						sendMessage(nickError, conn)
 						break
 					}
 
@@ -709,7 +733,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					for _, sub := range channelSubs {
 						if sub.ChannelID == userMessage.ChannelID {
-							sub.Connection.WriteJSON(userNickChgMsg)
+							sendMessage(userNickChgMsg, conn)
 						}
 					}
 					// give client their user info
@@ -719,15 +743,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						MessageID:      uuid.NewV4(),
 						TransmissionID: transmissionID,
 					}
-					conn.WriteJSON(clientMsg)
+					sendMessage(clientMsg, conn)
 				}
 			case "ping":
 				var pongMsg PongMessage
 				json.Unmarshal(msg, &pongMsg)
 				pongMsg.MessageID = uuid.NewV4()
 				pongMsg.Type = "pong"
-				log.Debug("OUT", pongMsg)
-				conn.WriteJSON(pongMsg)
+				sendMessage(pongMsg, conn)
 			case "userInfo":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -756,7 +779,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					Method:         userInfoMsg.Method,
 					MatchList:      matchList,
 				}
-				conn.WriteJSON(userInfoRes)
+				sendMessage(userInfoRes, conn)
 			case "channelPerm":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -785,13 +808,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					db.Where("user_id = ?", permMsg.Permission.UserID).Find(&existingPermissions)
 					for _, prm := range existingPermissions {
 						if prm.ChannelID == permMsg.Permission.ChannelID {
-							var challengeError ErrorMessage
-							challengeError.Type = "error"
-							challengeError.Message = "That user already has permission to that channel."
-							challengeError.TransmissionID = transmissionID
-							challengeError.MessageID = uuid.NewV4()
-							log.Debug("OUT", challengeError)
-							conn.WriteJSON(challengeError)
+							permAddErr := ErrorMessage{
+								Type:           "error",
+								Message:        "That user already has permission to that channel.",
+								TransmissionID: transmissionID,
+								MessageID:      uuid.NewV4(),
+							}
+							sendMessage(permAddErr, conn)
 							log.Warning("Duplicate permission requested.")
 							duplicate = true
 							break
@@ -804,35 +827,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if permMsg.Permission.PowerLevel > clientInfo.PowerLevel {
 						log.Warning("User does not have high enough power level to create permission.")
-						var challengeError ErrorMessage
-						challengeError.Type = "error"
-						challengeError.Message = "You can't create a permission with a power level higher than yourself."
-						challengeError.TransmissionID = transmissionID
-						challengeError.MessageID = uuid.NewV4()
-						log.Debug("OUT", challengeError)
-						conn.WriteJSON(challengeError)
+						sendError("PWRLVL", "You can't create a permission with a power level higher than yourself.", conn, transmissionID)
 						break
 					}
 
 					db.Create(&permMsg.Permission)
-					successMsg := SuccessMessage{
-						Type:           "channelPermRes",
-						MessageID:      uuid.NewV4(),
-						TransmissionID: transmissionID,
-						Status:         "SUCCESS",
-					}
-					log.Debug("OUT", successMsg)
-					conn.WriteJSON(successMsg)
+					sendSuccess("Permission added successfully.", conn, transmissionID)
 
 					for _, chanSub := range channelSubs {
 						if chanSub.UserID == permMsg.Permission.UserID {
-							grantMessage := InfoMessage{
-								Type:           "serverMessage",
-								MessageID:      uuid.NewV4(),
-								TransmissionID: transmissionID,
-								Message:        "You have been granted access to a new channel. Check /channel ls for details.",
-							}
-							chanSub.Connection.WriteJSON(grantMessage)
+							sendSuccess("You have been granted access to a new channel. Check /channel ls for details.", chanSub.Connection, transmissionID)
 						}
 					}
 				}
@@ -847,39 +851,18 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							found = true
 							db.Delete(&perm)
 							log.Debug("Deleted user permission.")
-							successMes := InfoMessage{
-								Type:           "serverMessage",
-								MessageID:      uuid.NewV4(),
-								TransmissionID: transmissionID,
-								Message:        "You have revoked permission for user " + permMsg.Permission.UserID.String(),
-							}
-							conn.WriteJSON(successMes)
+							sendSuccess("You have revoked permission for user "+permMsg.Permission.UserID.String(), conn, transmissionID)
 							break
 						}
 					}
 
 					if !found {
-						delErr := ErrorMessage{
-							Type:           "error",
-							Code:           "NOPERMEXISTS",
-							MessageID:      uuid.NewV4(),
-							TransmissionID: transmissionID,
-							Message:        "No permissions exist for that channel.",
-						}
-						log.Debug("OUT", delErr)
-						conn.WriteJSON(delErr)
+						sendError("NOPERM", "No permissions exist for that channel.", conn, transmissionID)
+						break
 					} else {
 						for _, sub := range channelSubs {
 							if sub.ChannelID == permMsg.Permission.ChannelID && sub.UserID == permMsg.Permission.UserID {
-								delErr := ErrorMessage{
-									Type:           "error",
-									Code:           "NOPERMEXISTS",
-									MessageID:      uuid.NewV4(),
-									TransmissionID: transmissionID,
-									Message:        "Your permissions to this channel have been revoked.",
-								}
-								log.Debug("OUT", delErr)
-								sub.Connection.WriteJSON(delErr)
+								sendError("REVOKED", "Your permissions to this channel have been revoked.", sub.Connection, transmissionID)
 								sub.Connection.Close()
 							}
 						}
@@ -894,28 +877,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				var chatMessage ChatMessage
 				json.Unmarshal(msg, &chatMessage)
 
-				db.Create(&chatMessage)
-
-				chatMessage.UserID = clientInfo.UserID
-				chatMessage.MessageID = uuid.NewV4()
-				chatMessage.TransmissionID = transmissionID
-				chatMessage.Username = clientInfo.Username
-
-				db.Save(&chatMessage)
-
-				found := false
-				for _, sub := range channelSubs {
-					if sub.ChannelID == chatMessage.ChannelID {
-						sub.Connection.WriteJSON(chatMessage)
-						found = true
-					}
-				}
-				if found {
-					log.Debug("BROADCAST", chatMessage)
-				} else {
-					log.Warning("Client is sending message to channel that is not active.")
-				}
-
+				broadcast(db, chatMessage, clientInfo, transmissionID)
 			case "channel":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -942,7 +904,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 									MessageID:      uuid.NewV4(),
 									TransmissionID: transmissionID,
 								}
-								sb.Connection.WriteJSON(leaveMsgRes)
+								sendMessage(leaveMsgRes, sb.Connection)
 
 								// remove this entry from slice
 								channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
@@ -963,13 +925,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					if clientInfo.PowerLevel < 50 {
 						log.Warning("User does not have create permissions.")
-						var challengeError ErrorMessage
-						challengeError.Type = "error"
-						challengeError.Message = "You don't have a high enough power level."
-						challengeError.MessageID = uuid.NewV4()
-						challengeError.TransmissionID = transmissionID
-						log.Debug("OUT", challengeError)
-						conn.WriteJSON(challengeError)
+						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
 
@@ -989,40 +945,31 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					}
 
 					db.Create(&newChannel)
-					sendChannelList(conn, db, log, clientInfo, transmissionID)
+					sendChannelList(conn, db, clientInfo, transmissionID)
 				}
 
 				if channelMessage.Method == "RETRIEVE" {
-					sendChannelList(conn, db, log, clientInfo, transmissionID)
+					sendChannelList(conn, db, clientInfo, transmissionID)
 				}
 
 				if channelMessage.Method == "DELETE" {
 					if clientInfo.PowerLevel < 50 {
 						log.Warning("User does not have delete permissions.")
-						var challengeError ErrorMessage
-						challengeError.Type = "error"
-						challengeError.Message = "You don't have a high enough power level."
-						log.Debug("OUT", challengeError)
-						conn.WriteJSON(challengeError)
+						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
 					var deletedChannel Channel
 					db.First(&deletedChannel, "channel_id = ?", channelMessage.ChannelID)
 					if deletedChannel.ID == 0 {
 						log.Warning("Channel DELETE request for nonexistant channel.")
+						sendError("NOEXIST", "That channel doesn't exist.", conn, transmissionID)
 						break
 					}
 					db.Delete(&deletedChannel)
 					for _, sub := range channelSubs {
 						if sub.ChannelID == channelMessage.ChannelID {
-							delMsg := InfoMessage{
-								Type:      "serverMessage",
-								MessageID: uuid.NewV4(),
-								Message:   "The channel has been deleted.",
-							}
-
 							if sub.UserID != clientInfo.UserID {
-								sub.Connection.WriteJSON(delMsg)
+								sendError("DELETED", "The channel has been deleted.", sub.Connection, transmissionID)
 							}
 							scanComplete := false
 							for true {
@@ -1046,12 +993,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 						}
 					}
-					successMsg := InfoMessage{
-						Type:      "serverMessage",
-						MessageID: uuid.NewV4(),
-						Message:   "The channel has been deleted.",
-					}
-					conn.WriteJSON(successMsg)
+					sendSuccess("Channel deleted successfully.", conn, transmissionID)
 				}
 
 				if channelMessage.Method == "JOIN" {
@@ -1073,19 +1015,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 						if !hasPermission {
 							log.Warning("User is requesting access to channel he does not have permission to.")
-							prmErr := ErrorMessage{
-								Type:    "error",
-								Code:    "NOACCESS",
-								Message: "You don't have permission to that.",
-							}
-							log.Debug("OUT", prmErr)
-							conn.WriteJSON(prmErr)
+							sendError("NOACCESS", "You don't have permission to that.", conn, transmissionID)
 							break
 						}
 					}
 
 					if requestedChannel.ID == 0 {
 						log.Warning("Client attempted subscription to nonexistant channel id " + requestedChannel.ChannelID.String())
+						sendError("NOEXIST", "That channel doesn't exist.", conn, transmissionID)
 						break
 					}
 
@@ -1112,13 +1049,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 
 					var chanRes ChannelResponse
 					chanRes.ChannelID = requestedChannel.ChannelID
+					chanRes.MessageID = uuid.NewV4()
+					chanRes.TransmissionID = transmissionID
 					chanRes.Method = channelMessage.Method
 					chanRes.Name = requestedChannel.Name
 					chanRes.Status = "SUCCESS"
 					chanRes.Type = "channelJoinRes"
 
-					log.Debug("OUT", chanRes)
-					conn.WriteJSON(chanRes)
+					sendMessage(chanRes, conn)
 				}
 
 			case "challengeRes":
@@ -1126,15 +1064,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				json.Unmarshal(msg, &challengeResponse)
 
 				if challengeResponse.TransmissionID.String() == emptyUserID {
-					versionErr := ErrorMessage{
-						Type:           "error",
-						Code:           "UNSUPPORTEDCLIENTVERSION",
-						TransmissionID: transmissionID,
-						MessageID:      uuid.NewV4(),
-						Message:        "It looks like you're probably running an old version of the client. Please upgrade with npm i -g vex-chat.",
-					}
-
-					conn.WriteJSON(versionErr)
+					sendError("VRSNERR", "You are using an unsupported client. Please upgrade.", conn, transmissionID)
 					conn.Close()
 					break
 				}
@@ -1148,7 +1078,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						challengeKey, _ := hex.DecodeString(sub.PubKey)
 						challengeSig, _ := hex.DecodeString(challengeResponse.Response)
 						if ed25519.Verify(challengeKey, []byte(sub.Challenge.String()), challengeSig) {
-							log.Notice("User authorized successfully.")
+							log.Info("User authorized successfully.")
 							authed = true
 
 							// give client the auth success message
@@ -1158,8 +1088,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Status:         "SUCCESS",
 								Type:           "authResult",
 							}
-							log.Debug("OUT", authResult)
-							conn.WriteJSON(authResult)
+							sendMessage(authResult, conn)
 
 							// give client their user info
 							clientMsg := ClientInfo{
@@ -1168,8 +1097,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								MessageID:      uuid.NewV4(),
 								TransmissionID: sub.TransmissionID,
 							}
-
-							conn.WriteJSON(clientMsg)
+							sendMessage(clientMsg, conn)
 
 							// send server welcome message
 							welcomeMessage := WelcomeMessage{
@@ -1178,12 +1106,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 								Message:        "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
 								TransmissionID: sub.TransmissionID,
 							}
-							log.Debug("OUT", welcomeMessage)
-							conn.WriteJSON(welcomeMessage)
+							sendMessage(welcomeMessage, conn)
 
 							// send the channel list
-							sendChannelList(conn, db, log, clientInfo, sub.TransmissionID)
+							sendChannelList(conn, db, clientInfo, sub.TransmissionID)
 
+							// add to global client list
 							wsClients = append(wsClients, conn)
 						}
 					}
@@ -1207,6 +1135,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				db.Where("id > ?", topMessage.ID).Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
 
 				for _, msg := range messages {
+					sendMessage(msg, conn)
 					conn.WriteJSON(msg)
 				}
 
@@ -1216,9 +1145,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					MessageID:      uuid.NewV4(),
 					Status:         "SUCCESS",
 				}
-				log.Debug("OUT", successMsg)
-				conn.WriteJSON(successMsg)
-
+				sendMessage(successMsg, conn)
 			case "challenge":
 				// respond to challenge
 				var challengeMessage ChallengeMessage
@@ -1230,46 +1157,22 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				fmt.Println(user)
 
 				if challengeMessage.TransmissionID.String() == emptyUserID {
-					versionErr := ErrorMessage{
-						Type:           "error",
-						Code:           "UNSUPPORTEDCLIENTVERSION",
-						TransmissionID: transmissionID,
-						MessageID:      uuid.NewV4(),
-						Message:        "You're running an unsupported client.\nPlease upgrade to >=1.0.0 with npm i -g vex-chat to log in.",
-					}
-
-					conn.WriteJSON(versionErr)
+					sendError("VRSNERR", "You are using an unsupported client. Please upgrade.", conn, transmissionID)
 					conn.Close()
 					break
 				}
 
 				if user.ID == 0 || user.UserID.String() == emptyUserID {
-					var challengeError ErrorMessage
-					challengeError.Type = "error"
-					challengeError.Message = "You need to register first!"
-					challengeError.MessageID = uuid.NewV4()
-					challengeError.TransmissionID = transmissionID
-					log.Debug("OUT", challengeError)
-					conn.WriteJSON(challengeError)
+					sendError("NOEXIST", "You need to register first!", conn, transmissionID)
 					break
 				}
 
 				if user.Banned == true {
-					banErr := ErrorMessage{
-						Type:           "error",
-						Code:           "BANNED",
-						TransmissionID: transmissionID,
-						MessageID:      uuid.NewV4(),
-						Message:        "You have been banned.",
-					}
-					log.Debug("OUT", banErr)
-					conn.WriteJSON(banErr)
+					sendError("BANNED", "You have been banned.", conn, transmissionID)
 					conn.Close()
 				}
 
 				clientInfo = user
-
-				log.Notice(clientInfo)
 
 				var challengeResponse ChallengeResponse
 				challengeResponse.Type = "challengeRes"
@@ -1277,8 +1180,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				challengeResponse.TransmissionID = transmissionID
 				challengeResponse.Response = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(challengeMessage.Challenge.String())))
 				challengeResponse.PubKey = hex.EncodeToString(keys.Pub)
-				log.Debug("OUT", challengeResponse)
-				conn.WriteJSON(challengeResponse)
+				sendMessage(challengeResponse, conn)
 
 				// challenge the client
 				var challengeToClient ChallengeMessage
@@ -1294,8 +1196,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 				challengeSub.Challenge = challengeToClient.Challenge
 				challengeSubscriptions = append(challengeSubscriptions, challengeSub)
 
-				log.Debug("OUT", challengeToClient)
-				conn.WriteJSON(challengeToClient)
+				sendMessage(challengeToClient, conn)
 			case "identity":
 				var identityMessage IdentityMessage
 				json.Unmarshal(msg, &identityMessage)
@@ -1309,9 +1210,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 					identityResponse.TransmissionID = transmissionID
 					identityResponse.Status = "SUCCESS"
 
+					// create the new uuid
 					db.Create(&Client{UserID: identityResponse.UUID, Username: "Anonymous", PowerLevel: 0, Banned: false})
-					log.Debug("OUT", identityResponse)
-					conn.WriteJSON(identityResponse)
+
+					// send it back
+					sendMessage(identityResponse, conn)
 				}
 
 				if identityMessage.Method == "REGISTER" {
@@ -1331,6 +1234,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 						if newClient.PubKey != "" {
 							log.Warning("User already registered.")
 						} else {
+							log.Info("Registration verified successfully. Creating user.")
 							db.Model(&newClient).Update("PubKey", identityMessage.PubKey)
 							var idResponse IdentityResponse
 							idResponse.Type = "identityRegisterRes"
@@ -1340,8 +1244,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, log *logging.Logger) http.Handler 
 							idResponse.Status = "SUCCESS"
 							idResponse.UUID = identityMessage.UUID
 
-							log.Debug("OUT", idResponse)
-							conn.WriteJSON(idResponse)
+							sendMessage(idResponse, conn)
 						}
 					} else {
 						log.Warning("Signature not verified.")
