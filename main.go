@@ -644,7 +644,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				}
 
 				if userMessage.Method == "KICK" {
-					if clientInfo.PowerLevel < 50 {
+					if clientInfo.PowerLevel < 25 {
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
