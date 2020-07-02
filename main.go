@@ -750,7 +750,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 
 					for _, sub := range channelSubs {
 						if sub.ChannelID == userMessage.ChannelID {
-							sendMessage(userNickChgMsg, conn)
+							sendMessage(userNickChgMsg, sub.Connection)
 						}
 					}
 					// give client their user info
