@@ -77,9 +77,9 @@ Here's an example of one of the simplest messages you could send to the server, 
 
 ```json
 {
-  "messageID": "4d6265c2-1314-464a-bddf-02a3e176cbbb",
+  "type": "pong",
   "transmissionID": "2a93b212-ea1f-4e06-bb55-2074b5633226",
-  "type": "pong"
+  "messageID": "4d6265c2-1314-464a-bddf-02a3e176cbbb"
 }
 ```
 
