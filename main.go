@@ -551,7 +551,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 
 		upgrader.CheckOrigin = func(req *http.Request) bool { return true }
 
-		conn, _ := upgrader.Upgrade(res, req, nil)
+		conn, err := upgrader.Upgrade(res, req, nil)
+
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
 		log.Info("Incoming websocket connection.")
 
 		challengeSubscriptions := []ChallengeSub{}
@@ -566,6 +572,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 			_, msg, err := conn.ReadMessage()
 
 			if err != nil {
+
 				scanComplete := false
 				log.Warning("Websocket connection terminated. Removing subscriptions.")
 				deletedIds := []uuid.UUID{}
