@@ -554,7 +554,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 		conn, err := upgrader.Upgrade(res, req, nil)
 
 		if err != nil {
-			fmt.Println(err)
+			res.Write([]byte("the client is not using the websocket protocol: 'upgrade' token not found in 'Connection' header"))
 			return
 		}
 
