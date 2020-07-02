@@ -26,7 +26,7 @@ var channelSubs = []*ChannelSub{}
 const version string = "1.0.2"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
 
-// standard database model
+// Model that hides unnecessary fields in json
 type Model struct {
 	ID        uint       `json:"index" gorm:"primary_key"`
 	CreatedAt time.Time  `json:"-"`
@@ -34,7 +34,7 @@ type Model struct {
 	DeletedAt *time.Time `json:"-" sql:"index"`
 }
 
-// modified database model to send created at in json
+// ChatModel is similar to Model but shows createdAt key
 type ChatModel struct {
 	ID        uint       `json:"index" gorm:"primary_key"`
 	CreatedAt time.Time  `json:"createdAt"`
@@ -42,7 +42,7 @@ type ChatModel struct {
 	DeletedAt *time.Time `json:"-" sql:"index"`
 }
 
-// database model
+// ChannelPermission database entry
 type ChannelPermission struct {
 	Model
 	UserID     uuid.UUID `json:"userID"`
@@ -50,6 +50,7 @@ type ChannelPermission struct {
 	PowerLevel int       `json:"powerLevel"`
 }
 
+// ClientInfo is a message to the client with their login info
 type ClientInfo struct {
 	Type           string    `json:"type"`
 	MessageID      uuid.UUID `json:"messageID"`
@@ -57,6 +58,7 @@ type ClientInfo struct {
 	Client         Client    `json:"client"`
 }
 
+// UserInfoMsg is a message from the client with a requested user's info
 type UserInfoMsg struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	Type           string    `json:"type"`
@@ -66,6 +68,7 @@ type UserInfoMsg struct {
 	UserTag        string    `json:"userTag"`
 }
 
+// UserInfoRes is a message from the client requesting a user's info.
 type UserInfoRes struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	Type           string    `json:"type"`
@@ -74,6 +77,7 @@ type UserInfoRes struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+// ChannelPermMsg is a message from the client to perform operations on channels.
 type ChannelPermMsg struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
@@ -82,6 +86,7 @@ type ChannelPermMsg struct {
 	Permission     ChannelPermission
 }
 
+// WelcomeMessage is the message the server sends on login.
 type WelcomeMessage struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
@@ -89,12 +94,14 @@ type WelcomeMessage struct {
 	Message        string    `json:"message"`
 }
 
+// PongMessage is a response to a ping.
 type PongMessage struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
 	Type           string    `json:"type"`
 }
 
+// HistoryReqMessage is a history request message.
 type HistoryReqMessage struct {
 	Type           string    `json:"type"`
 	ChannelID      uuid.UUID `json:"channelID"`
@@ -103,6 +110,7 @@ type HistoryReqMessage struct {
 	TopMessage     uuid.UUID `json:"topMessage"`
 }
 
+// ChatMessage is a type for emitted chat messages.
 type ChatMessage struct {
 	ChatModel
 	UserID         uuid.UUID `json:"userID"`
@@ -115,6 +123,7 @@ type ChatMessage struct {
 	Type           string    `json:"type"`
 }
 
+// Client database entry.
 type Client struct {
 	Model
 	PubKey     string    `json:"pubkey"`
@@ -124,6 +133,7 @@ type Client struct {
 	Banned     bool      `json:"banned"`
 }
 
+// Channel database entry
 type Channel struct {
 	Model
 	ChannelID uuid.UUID `json:"channelID"`
@@ -132,6 +142,7 @@ type Channel struct {
 	Name      string    `json:"name"`
 }
 
+// ChannelMessage is a message from the client to perform operations on a channel.
 type ChannelMessage struct {
 	Type           string    `json:"type"`
 	Method         string    `json:"method"`
@@ -142,6 +153,7 @@ type ChannelMessage struct {
 	Name           string    `json:"name"`
 }
 
+// ChannelResponse is a response to a ChannelMessage.
 type ChannelResponse struct {
 	Type           string    `json:"type"`
 	Method         string    `json:"method"`
@@ -152,6 +164,7 @@ type ChannelResponse struct {
 	Name           string    `json:"name"`
 }
 
+// AuthResultMessage is the message that is sent to the client after successful login.
 type AuthResultMessage struct {
 	Type           string    `json:"type"`
 	Status         string    `json:"status"`
@@ -159,6 +172,7 @@ type AuthResultMessage struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+// ChannelList is a message with a list of the user's permissioned channels.
 type ChannelList struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
@@ -168,6 +182,7 @@ type ChannelList struct {
 	Channels       []Channel `json:"channels"`
 }
 
+// UserMessage is a message to perform operations on users.
 type UserMessage struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
@@ -185,32 +200,30 @@ type Message struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+// SuccessMessage is a general success message, to be displayed by the client.
 type SuccessMessage struct {
 	Type           string    `json:"type"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
 	MessageID      uuid.UUID `json:"messageID"`
+	Message        string    `json:"message"`
 	Status         string    `json:"status"`
 }
 
-type InfoMessage struct {
-	Type           string    `json:"type"`
-	TransmissionID uuid.UUID `json:"transmissionID"`
-	MessageID      uuid.UUID `json:"messageID"`
-	Message        string    `json:"message"`
-}
-
+// ChannelSub is a subscription to a channel.
 type ChannelSub struct {
 	UserID     uuid.UUID       `json:"userID"`
 	ChannelID  uuid.UUID       `json:"channelID"`
 	Connection *websocket.Conn `json:"-"`
 }
 
+// ChallengeSub is a subscription by the server to a challenge transmission ID.
 type ChallengeSub struct {
 	PubKey         string    `json:"pubkey"`
 	Challenge      uuid.UUID `json:"challenge"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+// ChallengeMessage is what initiates a challenge.
 type ChallengeMessage struct {
 	Type           string    `json:"type"`
 	MessageID      uuid.UUID `json:"messageID"`
@@ -219,6 +232,7 @@ type ChallengeMessage struct {
 	PubKey         string    `json:"pubkey"`
 }
 
+// ChallengeResponse is the response to a challenge.
 type ChallengeResponse struct {
 	Type           string    `json:"type"`
 	MessageID      uuid.UUID `json:"messageID"`
@@ -227,6 +241,7 @@ type ChallengeResponse struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+// IdentityMessage is a message for performing operations on identities.
 type IdentityMessage struct {
 	Type           string    `json:"type"`
 	Method         string    `json:"method"`
@@ -237,6 +252,7 @@ type IdentityMessage struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+// IdentityResponse is a response to an IdentityMessage.
 type IdentityResponse struct {
 	Method         string    `json:"method"`
 	Type           string    `json:"type"`
@@ -246,6 +262,7 @@ type IdentityResponse struct {
 	Status         string    `json:"status"`
 }
 
+// ErrorMessage is a general error message to be displayed by the client.
 type ErrorMessage struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 	MessageID      uuid.UUID `json:"messageID"`
@@ -287,7 +304,7 @@ func sendError(code string, message string, conn *websocket.Conn, transmissionID
 }
 
 func sendSuccess(Message string, conn *websocket.Conn, transmissionID uuid.UUID) {
-	success := InfoMessage{
+	success := SuccessMessage{
 		Type:           "serverMessage",
 		MessageID:      uuid.NewV4(),
 		TransmissionID: transmissionID,
@@ -296,7 +313,7 @@ func sendSuccess(Message string, conn *websocket.Conn, transmissionID uuid.UUID)
 	sendMessage(success, conn)
 }
 
-func printAscii(log *logging.Logger) {
+func printASCII() {
 	fmt.Printf("\033[35mvvvvvvv           vvvvvvv    eeeeeeeeeeee    xxxxxxx      xxxxxxx\n" +
 		" v:::::v         v:::::v   ee::::::::::::ee   x:::::x    x:::::x \n" +
 		"  v:::::v       v:::::v   e::::::eeeee:::::ee  x:::::x  x:::::x  \n" +
@@ -314,7 +331,7 @@ func printAscii(log *logging.Logger) {
 	log.Info("See included LICENSE for details")
 }
 
-func checkConfig(log *logging.Logger) {
+func checkConfig() {
 	_, configErr := os.Stat("config")
 	if os.IsNotExist(configErr) {
 		log.Debug("Creating configuration folder.")
@@ -370,7 +387,7 @@ func createKeyFiles(log *logging.Logger) {
 	writeBytesToFile("config/key.priv", keys.Priv)
 }
 
-func checkKeys(log *logging.Logger) KeyPair {
+func checkKeys() KeyPair {
 	_, pubKeyErr := os.Stat("config/key.pub")
 	_, privKeyErr := os.Stat("config/key.priv")
 	if os.IsNotExist(pubKeyErr) && os.IsNotExist(privKeyErr) {
@@ -400,11 +417,11 @@ func (a *App) Initialize() {
 	backendFormatter := logging.NewBackendFormatter(backend, format)
 	logging.SetBackend(backendFormatter)
 
-	printAscii(log)
+	printASCII()
 
 	// initialize configuration files
-	checkConfig(log)
-	var keys = checkKeys(log)
+	checkConfig()
+	var keys = checkKeys()
 
 	// initialize database
 	db, err := gorm.Open("sqlite3", "vex-server.db")
@@ -646,7 +663,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 						}
 					}
 					log.Info("Kicked user " + userMessage.UserID.String())
-					kickSuccessMsg := InfoMessage{
+					kickSuccessMsg := SuccessMessage{
 						Type:           "serverMessage",
 						MessageID:      uuid.NewV4(),
 						TransmissionID: transmissionID,
@@ -675,7 +692,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 					clientToUpdate.PowerLevel = userMessage.PowerLevel
 					db.Save(&clientToUpdate)
 
-					successMsg := InfoMessage{
+					successMsg := SuccessMessage{
 						Type:           "serverMessage",
 						MessageID:      uuid.NewV4(),
 						TransmissionID: transmissionID,
