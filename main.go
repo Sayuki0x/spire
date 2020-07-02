@@ -272,6 +272,12 @@ type ErrorMessage struct {
 	Error          error     `json:"error"`
 }
 
+// StatusRes is the status http api endpoing response.
+type StatusRes struct {
+	Version string `json:"version"`
+	Status  string `json:"status"`
+}
+
 // KeyPair is a type that contains a Public and private ed25519 key.
 type KeyPair struct {
 	Pub  ed25519.PublicKey
@@ -438,6 +444,7 @@ func (a *App) Initialize() {
 	// initialize router
 	router := mux.NewRouter()
 	router.Handle("/socket", SocketHandler(keys, db)).Methods("GET")
+	router.HandleFunc("/status", StatusHandler).Methods(http.MethodGet)
 	a.Router = router
 }
 
@@ -453,6 +460,20 @@ func generateKeys() KeyPair {
 	keys.Priv = priv
 
 	return keys
+}
+
+func StatusHandler(res http.ResponseWriter, req *http.Request) {
+	res.Header().Set("Content-Type", "application/json")
+	res.WriteHeader(http.StatusOK)
+
+	statusRes := StatusRes{
+		Version: version,
+		Status:  "ONLINE",
+	}
+
+	byteRes, _ := json.Marshal(statusRes)
+
+	res.Write(byteRes)
 }
 
 func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, transmissionID uuid.UUID) {
