@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/ed25519"
@@ -292,6 +293,7 @@ type Config struct {
 	DbType             string        `json:"dbType"`
 	DbConnectionStr    string        `json:"dbConnectionStr"`
 	PublicRegistration bool          `json:"publicRegistration"`
+	Port               int           `json:"port"`
 	PowerLevels        RequiredPower `json:"powerLevels"`
 }
 
@@ -312,6 +314,7 @@ type App struct {
 	Router *mux.Router
 	Db     *gorm.DB
 	Log    *logging.Logger
+	Config Config
 }
 
 func sendMessage(msg interface{}, conn *websocket.Conn) {
@@ -455,6 +458,8 @@ func (a *App) Initialize() {
 	// initialize configuration files
 	config := checkConfig()
 	keys := checkKeys()
+
+	a.Config = config
 
 	// initialize database
 	// db, err := gorm.Open("sqlite3", "vex-server.db")
@@ -659,7 +664,8 @@ func readConfig() Config {
 func main() {
 	a := App{}
 	a.Initialize()
-	a.Run(":8000")
+	log.Info("Starting API on port " + strconv.Itoa(a.Config.Port))
+	a.Run(":" + strconv.Itoa(a.Config.Port))
 }
 
 func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
@@ -1470,6 +1476,4 @@ func (a *App) Run(addr string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	a.Log.Info("API listening on " + addr)
 }
