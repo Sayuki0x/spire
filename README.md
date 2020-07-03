@@ -52,7 +52,46 @@ we have a reference node.js cli client [here](https://github.com/ExtraHash/vex-c
 5. Start the server back up.
 6. The server is now up and running on port 8000.
 
-# Command Line Arguments
+### Different Databases
+
+The server will automatically start up with sqlite3, but you can configure it to use mysql. See the example configurations in the `example` folder.
+
+Note to run mysql, you need to create the database and apply this command to it:
+
+```sql
+ALTER DATABASE
+    database_name
+    CHARACTER SET = utf8mb4
+    COLLATE = utf8mb4_unicode_ci;
+```
+
+### Confiuration
+
+On the first run, it will generate a config.json file in the working directory if one is not present. The configuration is always loaded from this json file. You can change the server message, public registration, and the moderation power levels. This is the default configuration file.
+
+```json
+{
+    "welcomeMessage": "Welcome to the chat server.",
+    "dbType": "sqlite3",
+    "dbConnectionStr": "vex-server.db",
+    "publicRegistration": true,
+    "port": 8000,
+    "powerLevels": {
+        "kick": 25,
+        "ban": 50,
+        "op": 100,
+        "grant": 50,
+        "revoke": 50,
+        "talk": 0,
+        "create": 50,
+        "delete": 50
+    }
+}
+```
+
+## Command Line Arguments
+
+Various utilities are available by launching the binary with specific command line arguments. You may also define a custom keyfolder, config path, or port here.
 
 ```
 --keys /path/to/keyfolder         The path that your key folder is in. If it is not present, one will be generated.
