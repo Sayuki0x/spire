@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -27,6 +26,23 @@ var channelSubs = []*ChannelSub{}
 
 const version string = "1.1.0"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
+
+var defaultConfig = Config{
+	WelcomeMessage:     "Welcome to the server!",
+	DbType:             "sqlite3",
+	DbConnectionStr:    "vex-server.db",
+	PublicRegistration: true,
+	PowerLevels: RequiredPower{
+		Kick:   25,
+		Ban:    50,
+		Op:     100,
+		Grant:  50,
+		Revoke: 50,
+		Talk:   0,
+		Create: 50,
+		Delete: 50,
+	},
+}
 
 // Model that hides unnecessary fields in json
 type Model struct {
@@ -620,39 +636,16 @@ func writeBytesToFile(filename string, bytes []byte) bool {
 	return true
 }
 
-// Copy the src file to dst. Any existing file will be overwritten and will not
-// copy file attributes.
-func Copy(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return err
-	}
-	return out.Close()
-}
-
 func readConfig() Config {
 	_, configErr := os.Stat("config.json")
 	if os.IsNotExist(configErr) {
-		Copy("examples/config-default.json", "config.json")
+		return defaultConfig
 	}
 
 	configBytes := readJSONFile("config.json")
 	var config Config
 
 	json.Unmarshal(configBytes, &config)
-
 	return config
 }
 
