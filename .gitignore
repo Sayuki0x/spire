@@ -1,3 +1,5 @@
 vex*
-config*/
+config*
 *.db
+config.json
+keys*

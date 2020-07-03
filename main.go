@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
 	"github.com/op/go-logging"
 	uuid "github.com/satori/go.uuid"
@@ -272,6 +273,27 @@ type ErrorMessage struct {
 	Error          error     `json:"error"`
 }
 
+// RequiredPower is the required power level for moderation operations. It is in the json config.
+type RequiredPower struct {
+	Kick   int `json:"kick"`
+	Ban    int `json:"ban"`
+	Op     int `json:"op"`
+	Grant  int `json:"grant"`
+	Revoke int `json:"revoke"`
+	Talk   int `json:"talk"`
+	Create int `json:"create"`
+	Delete int `json:"delete"`
+}
+
+// Config is the user supplied json config
+type Config struct {
+	WelcomeMessage     string        `json:"welcomeMessage"`
+	DbType             string        `json:"dbType"`
+	DbConnectionStr    string        `json:"dbConnectionStr"`
+	PublicRegistration bool          `json:"publicRegistration"`
+	PowerLevels        RequiredPower `json:"powerLevels"`
+}
+
 // StatusRes is the status http api endpoing response.
 type StatusRes struct {
 	Version string `json:"version"`
@@ -337,17 +359,21 @@ func printASCII() {
 	log.Info("See included LICENSE for details")
 }
 
-func checkConfig() {
-	_, configErr := os.Stat("config")
+func checkConfig() Config {
+	config := readConfig()
+
+	_, configErr := os.Stat("keys")
 	if os.IsNotExist(configErr) {
 		log.Debug("Creating configuration folder.")
-		os.Mkdir("config", 0700)
+		os.Mkdir("keys", 0700)
 	}
-	_, pubKeyErr := os.Stat("config/key.pub")
-	_, privKeyErr := os.Stat("config/key.priv")
+	_, pubKeyErr := os.Stat("keys/key.pub")
+	_, privKeyErr := os.Stat("keys/key.priv")
 	if os.IsNotExist(privKeyErr) && os.IsNotExist(pubKeyErr) {
 		createKeyFiles(log)
 	}
+
+	return config
 }
 
 func broadcast(db *gorm.DB, chatMessage ChatMessage, clientInfo Client, transmissionID uuid.UUID) {
@@ -378,32 +404,32 @@ func broadcast(db *gorm.DB, chatMessage ChatMessage, clientInfo Client, transmis
 
 func createKeyFiles(log *logging.Logger) {
 	log.Debug("Creating keyfiles.")
-	_, pubKeyErr := os.Stat("config/key.pub")
+	_, pubKeyErr := os.Stat("keys/key.pub")
 	if os.IsNotExist(pubKeyErr) {
-		os.Create("config/key.pub")
+		os.Create("keys/key.pub")
 	}
-	_, privKeyErr := os.Stat("config/key.priv")
+	_, privKeyErr := os.Stat("keys/key.priv")
 	if os.IsNotExist(privKeyErr) {
-		os.Create("config/key.priv")
+		os.Create("keys/key.priv")
 	}
 
 	keys := generateKeys()
 
-	writeBytesToFile("config/key.pub", keys.Pub)
-	writeBytesToFile("config/key.priv", keys.Priv)
+	writeBytesToFile("keys/key.pub", keys.Pub)
+	writeBytesToFile("keys/key.priv", keys.Priv)
 }
 
 func checkKeys() KeyPair {
-	_, pubKeyErr := os.Stat("config/key.pub")
-	_, privKeyErr := os.Stat("config/key.priv")
+	_, pubKeyErr := os.Stat("keys/key.pub")
+	_, privKeyErr := os.Stat("keys/key.priv")
 	if os.IsNotExist(pubKeyErr) && os.IsNotExist(privKeyErr) {
 		createKeyFiles(log)
 	}
 
 	var keys KeyPair
 
-	keys.Pub = readBytesFromFile("config/key.pub")
-	keys.Priv = readBytesFromFile("config/key.priv")
+	keys.Pub = readBytesFromFile("keys/key.pub")
+	keys.Priv = readBytesFromFile("keys/key.priv")
 
 	log.Info("Server Public key " + hex.EncodeToString(keys.Pub))
 
@@ -426,11 +452,12 @@ func (a *App) Initialize() {
 	printASCII()
 
 	// initialize configuration files
-	checkConfig()
-	var keys = checkKeys()
+	config := checkConfig()
+	keys := checkKeys()
 
 	// initialize database
-	db, err := gorm.Open("sqlite3", "vex-server.db")
+	// db, err := gorm.Open("sqlite3", "vex-server.db")
+	db, err := gorm.Open(config.DbType, config.DbConnectionStr)
 	if err != nil {
 		log.Error("Failed to connect to database.")
 		os.Exit(1)
@@ -443,7 +470,7 @@ func (a *App) Initialize() {
 
 	// initialize router
 	router := mux.NewRouter()
-	router.Handle("/socket", SocketHandler(keys, db)).Methods("GET")
+	router.Handle("/socket", SocketHandler(keys, db, config)).Methods("GET")
 	router.HandleFunc("/status", StatusHandler).Methods(http.MethodGet)
 	a.Router = router
 }
@@ -462,6 +489,7 @@ func generateKeys() KeyPair {
 	return keys
 }
 
+// StatusHandler handles the status endpoint.
 func StatusHandler(res http.ResponseWriter, req *http.Request) {
 	res.Header().Set("Content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
@@ -512,6 +540,20 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, trans
 	sendMessage(channelList, conn)
 }
 
+func readJSONFile(filename string) []byte {
+	file, openErr := os.Open(filename)
+	if (openErr) != nil {
+		log.Fatal(openErr)
+	}
+
+	data, readErr := ioutil.ReadAll(file)
+	if readErr != nil {
+		log.Fatal(readErr)
+	}
+
+	return data
+}
+
 func readBytesFromFile(filename string) []byte {
 	// Open file for reading
 	file, openErr := os.Open(filename)
@@ -546,6 +588,15 @@ func writeBytesToFile(filename string, bytes []byte) bool {
 	return true
 }
 
+func readConfig() Config {
+	configBytes := readJSONFile("config.json")
+	var config Config
+
+	json.Unmarshal(configBytes, &config)
+
+	return config
+}
+
 func main() {
 	a := App{}
 	a.Initialize()
@@ -562,7 +613,7 @@ func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
 }
 
 // SocketHandler handles the websocket connection messages and responses.
-func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
+func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		var upgrader = websocket.Upgrader{
@@ -646,7 +697,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				json.Unmarshal(msg, &userMessage)
 
 				if userMessage.Method == "BAN" {
-					if clientInfo.PowerLevel < 50 {
+					if clientInfo.PowerLevel < config.PowerLevels.Ban {
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
@@ -656,6 +707,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 
 					if bannedUser.ID == 0 {
 						log.Warning("Requested ban to user that does not exist.")
+						break
+					}
+
+					if bannedUser.PowerLevel > clientInfo.PowerLevel {
+						log.Warning("Requested a ban for user with higher power level.")
+						sendError("PWRLVL", "You can't ban someone with a higher power level than you.", conn, transmissionID)
 						break
 					}
 
@@ -673,8 +730,24 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				}
 
 				if userMessage.Method == "KICK" {
-					if clientInfo.PowerLevel < 25 {
+					if clientInfo.PowerLevel < config.PowerLevels.Kick {
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
+						break
+					}
+
+					var userRequested Client
+
+					db.First(&userRequested, "user_id = ?", userMessage.MessageID)
+
+					if userRequested.ID == 0 {
+						log.Warning("Requested to kick user that doesn't exist.")
+						sendError("NOEXIST", "That user ID doesn't exist.", conn, transmissionID)
+						break
+					}
+
+					if userRequested.PowerLevel > clientInfo.PowerLevel {
+						log.Warning("Requested to kick user with higher power level.")
+						sendError("PWRLVL", "You can't kick someone with a higher power level than you.", conn, transmissionID)
 						break
 					}
 
@@ -832,15 +905,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 					conn.Close()
 					break
 				}
-				if clientInfo.PowerLevel < 50 {
-					log.Warning("User not authorized to change channel permissions!")
-					break
-				}
 
 				var permMsg ChannelPermMsg
 				json.Unmarshal(msg, &permMsg)
 
 				if permMsg.Method == "CREATE" {
+
+					if clientInfo.PowerLevel < config.PowerLevels.Grant {
+						log.Warning("User not authorized to grant channel permissions!")
+						break
+					}
 
 					// if it's the empty uuid
 					if permMsg.Permission.UserID.String() == emptyUserID {
@@ -888,6 +962,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				}
 
 				if permMsg.Method == "DELETE" {
+					if clientInfo.PowerLevel < config.PowerLevels.Revoke {
+						log.Warning("User not authorized to revoke channel permissions!")
+						break
+					}
+
 					cPerms := []ChannelPermission{}
 					db.Where("user_id = ?", permMsg.Permission.UserID).Find(&cPerms)
 
@@ -918,6 +997,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				if !authed {
 					log.Warning("Not authorized!")
 					conn.Close()
+					break
+				}
+				if clientInfo.PowerLevel < config.PowerLevels.Talk {
+					log.Warning("User attempted to chat but doesn't have a high enough power level.")
+					sendError("PWRLVL", "You don't have a high enoug power level to chat.", conn, transmissionID)
 					break
 				}
 				var chatMessage ChatMessage
@@ -969,8 +1053,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 
 				if channelMessage.Method == "CREATE" {
 
-					if clientInfo.PowerLevel < 50 {
-						log.Warning("User does not have create permissions.")
+					if clientInfo.PowerLevel < config.PowerLevels.Create {
+						log.Warning("User does not have channel create permissions.")
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
@@ -999,7 +1083,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				}
 
 				if channelMessage.Method == "DELETE" {
-					if clientInfo.PowerLevel < 50 {
+					if clientInfo.PowerLevel < config.PowerLevels.Delete {
 						log.Warning("User does not have delete permissions.")
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
@@ -1149,7 +1233,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 							welcomeMessage := WelcomeMessage{
 								MessageID:      uuid.NewV4(),
 								Type:           "welcomeMessage",
-								Message:        "Welcome to ExtraHash's server!\nHave fun and keep it clean! :D",
+								Message:        config.WelcomeMessage,
 								TransmissionID: sub.TransmissionID,
 							}
 							sendMessage(welcomeMessage, conn)
@@ -1243,6 +1327,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 
 				sendMessage(challengeToClient, conn)
 			case "identity":
+				if !config.PublicRegistration {
+					sendError("NOPUBRES", "Sorry, public registration isn't enabled on this server.", conn, transmissionID)
+					log.Warning("Someone attempted to register, but registration is disabled.")
+					return
+				}
+
 				var identityMessage IdentityMessage
 				json.Unmarshal(msg, &identityMessage)
 
@@ -1263,6 +1353,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB) http.Handler {
 				}
 
 				if identityMessage.Method == "REGISTER" {
+
 					var clientKeyPair KeyPair
 					clientKeyPair.Pub, _ = hex.DecodeString(identityMessage.PubKey)
 					sig, _ := hex.DecodeString(identityMessage.Signed)
