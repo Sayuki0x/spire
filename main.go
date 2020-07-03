@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -588,7 +589,34 @@ func writeBytesToFile(filename string, bytes []byte) bool {
 	return true
 }
 
+// Copy the src file to dst. Any existing file will be overwritten and will not
+// copy file attributes.
+func Copy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+	return out.Close()
+}
+
 func readConfig() Config {
+	_, configErr := os.Stat("config.json")
+	if os.IsNotExist(configErr) {
+		Copy("examples/config-default.json", "config.json")
+	}
+
 	configBytes := readJSONFile("config.json")
 	var config Config
 
