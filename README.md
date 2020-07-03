@@ -11,11 +11,11 @@ Currently supports:
 - basic moderation (kicking, banning)
 - basic permission configuration
 
-Set the power level of a user to 50 to allow kicking and banning, and to 100 to allow setting the power level of other users.
+You can set the power levels required for various moderation actions in the `config.json` file.
 
 ## Installing
 
-simply download the executable with wget and run it.
+simply download the executable and run it.
 
 ```
 wget https://github.com/ExtraHash/vex-server/releases/download/v0.1.0/vex-server
