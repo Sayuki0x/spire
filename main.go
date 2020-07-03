@@ -473,6 +473,8 @@ func (a *App) Initialize() {
 	router := mux.NewRouter()
 	router.Handle("/socket", SocketHandler(keys, db, config)).Methods("GET")
 	router.HandleFunc("/status", StatusHandler).Methods(http.MethodGet)
+	router.HandleFunc("/", HomeHandler).Methods(http.MethodGet)
+
 	a.Router = router
 }
 
@@ -490,8 +492,37 @@ func generateKeys() KeyPair {
 	return keys
 }
 
+// HomeHandler handles the home endpoint.
+func HomeHandler(res http.ResponseWriter, req *http.Request) {
+	log.Info(req.Method, req.URL, GetIP(req))
+
+	res.WriteHeader(http.StatusOK)
+
+	res.Write([]byte(`
+	<!DOCTYPE html>
+	<html>
+		<head>
+			<title>Welcome to Vex!</title>
+			<style>
+				body {
+					width: 35em;
+					margin: 0 auto;
+					font-family: Tahoma, Verdana, Arial, sans-serif;
+				}
+			</style>
+		</head>
+		<body>
+			<h1>Welcome to Vex!</h1>
+			<p>If you can see this message, the vex server is up and running. Point your client here to log in and chat.</p>
+		</body>
+	</html>
+	`))
+}
+
 // StatusHandler handles the status endpoint.
 func StatusHandler(res http.ResponseWriter, req *http.Request) {
+	log.Info(req.Method, req.URL, GetIP(req))
+
 	res.Header().Set("Content-Type", "application/json")
 	res.WriteHeader(http.StatusOK)
 
@@ -640,9 +671,19 @@ func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
 	}
 }
 
+// GetIP from http request
+func GetIP(r *http.Request) string {
+	forwarded := r.Header.Get("X-FORWARDED-FOR")
+	if forwarded != "" {
+		return forwarded
+	}
+	return r.RemoteAddr
+}
+
 // SocketHandler handles the websocket connection messages and responses.
 func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		log.Info(req.Method, req.URL, GetIP(req))
 
 		var upgrader = websocket.Upgrader{
 			ReadBufferSize:  1024,
