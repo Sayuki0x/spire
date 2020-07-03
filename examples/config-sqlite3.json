@@ -1,0 +1,16 @@
+{
+    "welcomeMessage": "Welcome to the chat server.",
+    "dbType": "sqlite3",
+    "dbConnectionStr": "vex-server.db",
+    "publicRegistration": true,
+    "powerLevels": {
+        "kick": 25,
+        "ban": 50,
+        "op": 100,
+        "grant": 50,
+        "revoke": 50,
+        "talk": 0,
+        "create": 50,
+        "delete": 50
+    }
+}
