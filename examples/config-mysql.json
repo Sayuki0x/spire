@@ -3,6 +3,7 @@
     "dbType": "mysql",
     "dbConnectionStr": "dbUser:dbPassword@(dbHostname)/dbName?charset=utf8&parseTime=True&loc=Local",
     "publicRegistration": true,
+    "port": 8000,
     "powerLevels": {
         "kick": 25,
         "ban": 50,
