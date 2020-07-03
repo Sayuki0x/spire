@@ -327,6 +327,7 @@ type StatusRes struct {
 	Version   string `json:"version"`
 	Status    string `json:"status"`
 	MessageID string `json:"messageID"`
+	PublicKey string `json:"publicKey"`
 }
 
 // KeyPair is a type that contains a Public and private ed25519 key.
@@ -595,15 +596,35 @@ func (a *App) Initialize() {
 	// initialize router
 	router := mux.NewRouter()
 	router.Handle("/socket", SocketHandler(keys, db, config)).Methods("GET")
-	router.Handle("/", HomeHandler_(keys.Pub)).Methods("GET")
-	router.HandleFunc("/status", StatusHandler).Methods(http.MethodGet)
-	// router.HandleFunc("/", HomeHandler).Methods(http.MethodGet)
+	router.Handle("/", HomeHandler(keys.Pub)).Methods("GET")
+	router.Handle("/status", StatusHandler_(keys.Pub)).Methods("GET")
 
 	a.Router = router
 }
 
 // SocketHandler handles the websocket connection messages and responses.
-func HomeHandler_(pubkey ed25519.PublicKey) http.Handler {
+func StatusHandler_(pubkey ed25519.PublicKey) http.Handler {
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		log.Info(req.Method, req.URL, GetIP(req))
+
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(http.StatusOK)
+
+		statusRes := StatusRes{
+			Version:   version,
+			Status:    "ONLINE",
+			PublicKey: hex.EncodeToString(pubkey),
+			MessageID: uuid.NewV4().String(),
+		}
+
+		byteRes, _ := json.Marshal(statusRes)
+
+		res.Write(byteRes)
+	})
+}
+
+// SocketHandler handles the websocket connection messages and responses.
+func HomeHandler(pubkey ed25519.PublicKey) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		log.Info(req.Method, req.URL, GetIP(req))
 
@@ -637,25 +658,6 @@ func generateKeys() KeyPair {
 	keys.Priv = priv
 
 	return keys
-}
-
-// HomeHandler handles the home endpoint.
-func HomeHandler(res http.ResponseWriter, req *http.Request) {
-	log.Info(req.Method, req.URL, GetIP(req))
-
-	res.WriteHeader(http.StatusOK)
-
-	res.Write([]byte("<!DOCTYPE html>"))
-	res.Write([]byte("<html>"))
-	res.Write([]byte("<style> body { width: 35em; margin: 0 auto; font-family: monospace; } ul { list-style: none } </style>"))
-	res.Write([]byte("<body>"))
-	res.Write([]byte("<h1>Welcome to Vex!</h1>"))
-	res.Write([]byte("<p>If you can see this, the vex server is running. Point your client to " + req.Host + " to chat.</p>"))
-	res.Write([]byte("<h2>Server Information</h2>"))
-	res.Write([]byte("<ul>"))
-	res.Write([]byte("<li>Vex Version: " + version + "</li>"))
-	res.Write([]byte("</body>"))
-	res.Write([]byte("</html>"))
 }
 
 // StatusHandler handles the status endpoint.
