@@ -46,6 +46,14 @@ var defaultConfig = Config{
 	},
 }
 
+// Dump of all data for import by another server
+type Dump struct {
+	Clients            []Client            `json:"clients"`
+	Channels           []Channel           `json:"channels"`
+	ChannelPermissions []ChannelPermission `json:"channelPermissions"`
+	ChatMessages       []ChatMessage       `json:"chatMessage"`
+}
+
 // Model that hides unnecessary fields in json
 type Model struct {
 	ID        uint       `json:"index" gorm:"primary_key"`
@@ -316,8 +324,9 @@ type Config struct {
 
 // StatusRes is the status http api endpoing response.
 type StatusRes struct {
-	Version string `json:"version"`
-	Status  string `json:"status"`
+	Version   string `json:"version"`
+	Status    string `json:"status"`
+	MessageID string `json:"messageID"`
 }
 
 // KeyPair is a type that contains a Public and private ed25519 key.
@@ -380,23 +389,6 @@ func printASCII() {
 	log.Info("See included LICENSE for details")
 }
 
-func checkConfig() Config {
-	config := readConfig()
-
-	_, configErr := os.Stat("keys")
-	if os.IsNotExist(configErr) {
-		log.Debug("Creating key folder.")
-		os.Mkdir("keys", 0700)
-	}
-	_, pubKeyErr := os.Stat("keys/key.pub")
-	_, privKeyErr := os.Stat("keys/key.priv")
-	if os.IsNotExist(privKeyErr) && os.IsNotExist(pubKeyErr) {
-		createKeyFiles(log)
-	}
-
-	return config
-}
-
 func broadcast(db *gorm.DB, chatMessage ChatMessage, clientInfo Client, transmissionID uuid.UUID) {
 	db.Create(&chatMessage)
 
@@ -423,34 +415,42 @@ func broadcast(db *gorm.DB, chatMessage ChatMessage, clientInfo Client, transmis
 	}
 }
 
-func createKeyFiles(log *logging.Logger) {
+func createKeyFiles(keyFolder string) {
 	log.Debug("Creating keyfiles.")
-	_, pubKeyErr := os.Stat("keys/key.pub")
-	if os.IsNotExist(pubKeyErr) {
-		os.Create("keys/key.pub")
+
+	if !fileExists(keyFolder + "/key.pub") {
+		os.Create(keyFolder + "/key.pub")
 	}
-	_, privKeyErr := os.Stat("keys/key.priv")
-	if os.IsNotExist(privKeyErr) {
-		os.Create("keys/key.priv")
+	if !fileExists(keyFolder + "/key.priv") {
+		os.Create(keyFolder + "/key.priv")
 	}
 
 	keys := generateKeys()
 
-	writeBytesToFile("keys/key.pub", keys.Pub)
-	writeBytesToFile("keys/key.priv", keys.Priv)
+	writeBytesToFile(keyFolder+"/key.pub", keys.Pub)
+	writeBytesToFile(keyFolder+"/key.priv", keys.Priv)
 }
 
-func checkKeys() KeyPair {
-	_, pubKeyErr := os.Stat("keys/key.pub")
-	_, privKeyErr := os.Stat("keys/key.priv")
-	if os.IsNotExist(pubKeyErr) && os.IsNotExist(privKeyErr) {
-		createKeyFiles(log)
+func checkKeys(cliArgs CliArgs) KeyPair {
+	keyFolder := cliArgs.keyFolder
+
+	if keyFolder == "" {
+		keyFolder = "keys"
+	}
+
+	if !fileExists(keyFolder) {
+		log.Debug("Creating key folder.")
+		os.Mkdir(keyFolder, 0700)
+	}
+
+	if !fileExists(keyFolder + "/key.priv") {
+		createKeyFiles(keyFolder)
 	}
 
 	var keys KeyPair
 
-	keys.Pub = readBytesFromFile("keys/key.pub")
-	keys.Priv = readBytesFromFile("keys/key.priv")
+	keys.Pub = readBytesFromFile(keyFolder + "/key.pub")
+	keys.Priv = readBytesFromFile(keyFolder + "/key.priv")
 
 	log.Info("Server Public key " + hex.EncodeToString(keys.Pub))
 
@@ -459,10 +459,70 @@ func checkKeys() KeyPair {
 
 var log *logging.Logger = logging.MustGetLogger("vex")
 
+type CliArgs struct {
+	dump           bool
+	slurp          bool
+	slurpFile      string
+	register       bool
+	configPath     string
+	keyFolder      string
+	registerClient Client
+}
+
+func getArgs() CliArgs {
+	// get cli rawArgs
+	rawArgs := os.Args[1:]
+
+	cliArgs := CliArgs{}
+
+	for i, arg := range rawArgs {
+		if arg == "--dump" {
+			cliArgs.dump = true
+		}
+
+		if arg == "--import" {
+			cliArgs.slurp = true
+
+			if len(rawArgs) > i+1 {
+				cliArgs.slurpFile = rawArgs[i+1]
+			} else {
+				log.Fatal("File argument is required for import. --import /path/to/dump.json")
+			}
+		}
+
+		if arg == "--register" {
+			if len(rawArgs) > i+2 {
+				cliArgs.register = true
+
+			} else {
+				log.Fatal("Register argument requires a public key and powerlevel argument. --register pubkey 100")
+			}
+		}
+
+		if arg == "--config" {
+			if len(rawArgs) > i+1 {
+				cliArgs.configPath = rawArgs[i+1]
+			} else {
+				log.Fatal("File argument is required for config. --config /path/to/config.json")
+			}
+		}
+
+		if arg == "--keys" {
+			if len(rawArgs) > i+1 {
+				cliArgs.keyFolder = rawArgs[i+1]
+			} else {
+				log.Fatal("File argument is required for key folder. --config /path/to/keyfolder")
+			}
+		}
+	}
+	return cliArgs
+}
+
 // Initialize does the initialization of App.
 func (a *App) Initialize() {
-	//initialize logger
+	cliArgs := getArgs()
 
+	//initialize logger
 	var format = logging.MustStringFormatter(
 		`%{color}%{time:15:04:05.000} ▶ %{level:.4s}%{color:reset} %{message}`,
 	)
@@ -473,38 +533,103 @@ func (a *App) Initialize() {
 	printASCII()
 
 	// initialize configuration files
-	config := checkConfig()
-	keys := checkKeys()
+	config := readConfig(cliArgs)
+	keys := checkKeys(cliArgs)
 
 	a.Config = config
 
-	// initialize database
-	// db, err := gorm.Open("sqlite3", "vex-server.db")
+	// initialize database, support sqlite and mysql
 	db, err := gorm.Open(config.DbType, config.DbConnectionStr)
-	if err != nil {
-		log.Error("Failed to connect to database.")
-		os.Exit(1)
-	}
+	check(err)
 	db.AutoMigrate(&Client{})
 	db.AutoMigrate(&Channel{})
 	db.AutoMigrate(&ChatMessage{})
 	db.AutoMigrate(&ChannelPermission{})
 	a.Db = db
 
+	if cliArgs.register {
+	}
+
+	if cliArgs.dump {
+		log.Notice("Dumping backup data!")
+
+		dump := Dump{}
+
+		db.Find(&dump.Clients)
+		db.Find(&dump.ChannelPermissions)
+		db.Find(&dump.ChatMessages)
+		db.Find(&dump.Channels)
+
+		writeJSONFile("dump.json", dump)
+		log.Notice("Backup complete. You can find the dump file at dump.json")
+		os.Exit(0)
+	}
+
+	if cliArgs.slurp {
+		log.Notice("Importing dump data from " + cliArgs.slurpFile)
+		jsonBytes := readJSONFile(cliArgs.slurpFile)
+
+		var slurpData Dump
+		json.Unmarshal(jsonBytes, &slurpData)
+
+		for _, client := range slurpData.Clients {
+			db.Create(&client)
+		}
+
+		for _, channel := range slurpData.Channels {
+			db.Create(&channel)
+		}
+
+		for _, channelPerm := range slurpData.ChannelPermissions {
+			db.Create(&channelPerm)
+		}
+
+		for _, chatMessage := range slurpData.ChatMessages {
+			db.Create(&chatMessage)
+		}
+
+		log.Notice("Import complete!")
+		os.Exit(0)
+	}
+
 	// initialize router
 	router := mux.NewRouter()
 	router.Handle("/socket", SocketHandler(keys, db, config)).Methods("GET")
+	router.Handle("/", HomeHandler_(keys.Pub)).Methods("GET")
 	router.HandleFunc("/status", StatusHandler).Methods(http.MethodGet)
-	router.HandleFunc("/", HomeHandler).Methods(http.MethodGet)
+	// router.HandleFunc("/", HomeHandler).Methods(http.MethodGet)
 
 	a.Router = router
 }
 
+// SocketHandler handles the websocket connection messages and responses.
+func HomeHandler_(pubkey ed25519.PublicKey) http.Handler {
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		log.Info(req.Method, req.URL, GetIP(req))
+
+		res.WriteHeader(http.StatusOK)
+
+		res.Write([]byte("<!DOCTYPE html>"))
+		res.Write([]byte("<html>"))
+		res.Write([]byte("<style> body { width: 50em; margin: 0 auto; font-family: monospace; } ul { list-style: none } </style>"))
+		res.Write([]byte("<body>"))
+		res.Write([]byte("<h1>Welcome to Vex!</h1>"))
+		res.Write([]byte("<p>If you can see this, the vex server is running. Point your client to " + req.Host + " to chat.</p>"))
+		res.Write([]byte("<h2>Server Information</h2>"))
+		res.Write([]byte("<ul>"))
+		res.Write([]byte("<li>Vex Version: " + version + "</li>"))
+		res.Write([]byte("<li>Public Key: &nbsp;" + hex.EncodeToString(pubkey) + "</li>"))
+		res.Write([]byte("<li>Hostname: &nbsp;&nbsp;&nbsp;" + req.Host + "</li>"))
+		res.Write([]byte("<li>MessageID: &nbsp;&nbsp;" + uuid.NewV4().String() + "</li>"))
+		res.Write([]byte("</ul>"))
+		res.Write([]byte("</body>"))
+		res.Write([]byte("</html>"))
+	})
+}
+
 func generateKeys() KeyPair {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		log.Fatal("Something went wrong generating the keys.")
-	}
+	check(err)
 
 	var keys KeyPair
 
@@ -520,25 +645,17 @@ func HomeHandler(res http.ResponseWriter, req *http.Request) {
 
 	res.WriteHeader(http.StatusOK)
 
-	res.Write([]byte(`
-	<!DOCTYPE html>
-	<html>
-		<head>
-			<title>Welcome to Vex!</title>
-			<style>
-				body {
-					width: 35em;
-					margin: 0 auto;
-					font-family: Tahoma, Verdana, Arial, sans-serif;
-				}
-			</style>
-		</head>
-		<body>
-			<h1>Welcome to Vex!</h1>
-			<p>If you can see this message, the vex server is up and running. Point your client here to log in and chat.</p>
-		</body>
-	</html>
-	`))
+	res.Write([]byte("<!DOCTYPE html>"))
+	res.Write([]byte("<html>"))
+	res.Write([]byte("<style> body { width: 35em; margin: 0 auto; font-family: monospace; } ul { list-style: none } </style>"))
+	res.Write([]byte("<body>"))
+	res.Write([]byte("<h1>Welcome to Vex!</h1>"))
+	res.Write([]byte("<p>If you can see this, the vex server is running. Point your client to " + req.Host + " to chat.</p>"))
+	res.Write([]byte("<h2>Server Information</h2>"))
+	res.Write([]byte("<ul>"))
+	res.Write([]byte("<li>Vex Version: " + version + "</li>"))
+	res.Write([]byte("</body>"))
+	res.Write([]byte("</html>"))
 }
 
 // StatusHandler handles the status endpoint.
@@ -549,8 +666,9 @@ func StatusHandler(res http.ResponseWriter, req *http.Request) {
 	res.WriteHeader(http.StatusOK)
 
 	statusRes := StatusRes{
-		Version: version,
-		Status:  "ONLINE",
+		Version:   version,
+		Status:    "ONLINE",
+		MessageID: uuid.NewV4().String(),
 	}
 
 	byteRes, _ := json.Marshal(statusRes)
@@ -596,29 +714,35 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, trans
 
 func readJSONFile(filename string) []byte {
 	file, openErr := os.Open(filename)
-	if (openErr) != nil {
-		log.Fatal(openErr)
-	}
+	check(openErr)
 
 	data, readErr := ioutil.ReadAll(file)
-	if readErr != nil {
-		log.Fatal(readErr)
-	}
+	check(readErr)
 
 	return data
+}
+
+func check(e error) {
+	if e != nil {
+		log.Fatal(e)
+	}
+}
+
+func writeJSONFile(filename string, data interface{}) {
+	jsonBytes, parseErr := json.MarshalIndent(data, "", "   ")
+	check(parseErr)
+
+	writeErr := ioutil.WriteFile(filename, jsonBytes, 0700)
+	check(writeErr)
 }
 
 func readBytesFromFile(filename string) []byte {
 	// Open file for reading
 	file, openErr := os.Open(filename)
-	if openErr != nil {
-		log.Fatal(openErr)
-	}
+	check(openErr)
 
 	data, readErr := ioutil.ReadAll(file)
-	if readErr != nil {
-		log.Fatal(readErr)
-	}
+	check(readErr)
 
 	bytes, _ := hex.DecodeString(string(data))
 
@@ -627,31 +751,40 @@ func readBytesFromFile(filename string) []byte {
 
 func writeBytesToFile(filename string, bytes []byte) bool {
 	file, openErr := os.OpenFile(filename, os.O_RDWR, 0700)
-	if openErr != nil {
-		log.Fatal("Error opening file " + filename + " for writing.")
-		log.Fatal(openErr)
-		return false
-	}
+	check(openErr)
+
 	file.Write([]byte(hex.EncodeToString(bytes)))
+
 	syncErr := file.Sync()
-	if syncErr != nil {
-		log.Fatal(syncErr)
-		return false
-	}
+	check(syncErr)
+
 	file.Close()
 	return true
 }
 
-func readConfig() Config {
-	_, configErr := os.Stat("config.json")
+func fileExists(filename string) bool {
+	_, configErr := os.Stat(filename)
 	if os.IsNotExist(configErr) {
-		return defaultConfig
+		return false
+	}
+	return true
+}
+
+func readConfig(cliArgs CliArgs) Config {
+	configPath := cliArgs.configPath
+
+	if configPath == "" {
+		configPath = "config.json"
 	}
 
-	configBytes := readJSONFile("config.json")
-	var config Config
+	if !fileExists(configPath) {
+		writeJSONFile(configPath, defaultConfig)
+	}
 
+	configBytes := readJSONFile(configPath)
+	var config Config
 	json.Unmarshal(configBytes, &config)
+
 	return config
 }
 
@@ -714,7 +847,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 			_, msg, err := conn.ReadMessage()
 
 			if err != nil {
-
 				scanComplete := false
 				log.Warning("Websocket connection terminated. Removing subscriptions.")
 				deletedIds := []uuid.UUID{}
@@ -1466,8 +1598,5 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 // Run starts the http server.
 func (a *App) Run(addr string) {
 	err := http.ListenAndServe(addr, a.Router)
-
-	if err != nil {
-		log.Fatal(err)
-	}
+	check(err)
 }
