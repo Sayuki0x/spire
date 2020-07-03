@@ -15,12 +15,20 @@ You can set the power levels required for various moderation actions in the `con
 
 ## Installing
 
-simply download the executable and run it.
+Simply download the executable and run it.
 
 ```
 wget https://github.com/ExtraHash/vex-server/releases/download/v0.1.0/vex-server
 ./vex-server
 ```
+
+### Supported databases
+
+By default, the backend will create an sqlite3 database. 
+
+You can also use a mysql database by modifying the `dbType` and `dbConnectionStr` fields in the generated config.json file. See the example configs in the example folder.
+
+The backend may also work with other gorm supported databases, but have not been tested.
 
 ## Compiling From Source
 

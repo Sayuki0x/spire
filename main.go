@@ -460,6 +460,7 @@ func checkKeys(cliArgs CliArgs) KeyPair {
 
 var log *logging.Logger = logging.MustGetLogger("vex")
 
+// CliArgs is the arguments for the program.
 type CliArgs struct {
 	dump               bool
 	dumpFile           string
@@ -628,7 +629,7 @@ func (a *App) Initialize() {
 	a.Router = router
 }
 
-// SocketHandler handles the websocket connection messages and responses.
+// StatusHandler handles the status endpoint.
 func StatusHandler(pubkey ed25519.PublicKey) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		log.Info(req.Method, req.URL, GetIP(req))
@@ -649,7 +650,7 @@ func StatusHandler(pubkey ed25519.PublicKey) http.Handler {
 	})
 }
 
-// SocketHandler handles the websocket connection messages and responses.
+// HomeHandler handles the server homepage.
 func HomeHandler(pubkey ed25519.PublicKey) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		log.Info(req.Method, req.URL, GetIP(req))
@@ -890,6 +891,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 			transmissionID := message.TransmissionID
 
+			if transmissionID.String() == emptyUserID {
+				log.Warning("User sent message of type " + message.Type + " without transmissionID.")
+				sendError("NOTRNSID", "You are required to include a transmission ID.", conn, transmissionID)
+				continue
+			}
+
 			if message.Type == "" {
 				log.Warning("Invalid message: " + string(msg))
 				continue
@@ -949,7 +956,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					var userRequested Client
 
-					db.First(&userRequested, "user_id = ?", userMessage.MessageID)
+					db.First(&userRequested, "user_id = ?", userMessage.UserID)
 
 					if userRequested.ID == 0 {
 						log.Warning("Requested to kick user that doesn't exist.")
@@ -1295,13 +1302,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 
 				if channelMessage.Method == "DELETE" {
+					fmt.Println("reached delete block")
 					if clientInfo.PowerLevel < config.PowerLevels.Delete {
 						log.Warning("User does not have delete permissions.")
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID)
 						break
 					}
+					fmt.Println("user does hvae permissions")
 					var deletedChannel Channel
 					db.First(&deletedChannel, "channel_id = ?", channelMessage.ChannelID)
+					log.Notice(deletedChannel)
 					if deletedChannel.ID == 0 {
 						log.Warning("Channel DELETE request for nonexistant channel.")
 						sendError("NOEXIST", "That channel doesn't exist.", conn, transmissionID)

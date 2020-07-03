@@ -1,7 +1,7 @@
 {
     "welcomeMessage": "Your welcome message here",
     "dbType": "mysql",
-    "dbConnectionStr": "dbUser:dbPassword@(dbHostname)/dbName?charset=utf8&parseTime=True&loc=Local",
+    "dbConnectionStr": "dbUser:dbPassword@(dbHostname)/dbName?charset=utf8mb4&collation=utf8mb4_unicode_ci&parseTime=True&loc=Local",
     "publicRegistration": true,
     "port": 8000,
     "powerLevels": {
