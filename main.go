@@ -597,13 +597,13 @@ func (a *App) Initialize() {
 	router := mux.NewRouter()
 	router.Handle("/socket", SocketHandler(keys, db, config)).Methods("GET")
 	router.Handle("/", HomeHandler(keys.Pub)).Methods("GET")
-	router.Handle("/status", StatusHandler_(keys.Pub)).Methods("GET")
+	router.Handle("/status", StatusHandler(keys.Pub)).Methods("GET")
 
 	a.Router = router
 }
 
 // SocketHandler handles the websocket connection messages and responses.
-func StatusHandler_(pubkey ed25519.PublicKey) http.Handler {
+func StatusHandler(pubkey ed25519.PublicKey) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		log.Info(req.Method, req.URL, GetIP(req))
 
@@ -658,24 +658,6 @@ func generateKeys() KeyPair {
 	keys.Priv = priv
 
 	return keys
-}
-
-// StatusHandler handles the status endpoint.
-func StatusHandler(res http.ResponseWriter, req *http.Request) {
-	log.Info(req.Method, req.URL, GetIP(req))
-
-	res.Header().Set("Content-Type", "application/json")
-	res.WriteHeader(http.StatusOK)
-
-	statusRes := StatusRes{
-		Version:   version,
-		Status:    "ONLINE",
-		MessageID: uuid.NewV4().String(),
-	}
-
-	byteRes, _ := json.Marshal(statusRes)
-
-	res.Write(byteRes)
 }
 
 func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, transmissionID uuid.UUID) {
