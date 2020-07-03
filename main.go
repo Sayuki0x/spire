@@ -643,6 +643,7 @@ func HomeHandler(pubkey ed25519.PublicKey) http.Handler {
 		res.Write([]byte("<li>Hostname: &nbsp;&nbsp;&nbsp;" + req.Host + "</li>"))
 		res.Write([]byte("<li>MessageID: &nbsp;&nbsp;" + uuid.NewV4().String() + "</li>"))
 		res.Write([]byte("</ul>"))
+		res.Write([]byte("<p>© LogicBite LLC 2019-2020. See included LICENSE for details.</p>"))
 		res.Write([]byte("</body>"))
 		res.Write([]byte("</html>"))
 	})
