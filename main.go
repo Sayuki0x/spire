@@ -25,7 +25,7 @@ import (
 var wsClients = []*websocket.Conn{}
 var channelSubs = []*ChannelSub{}
 
-const version string = "1.2.0"
+const version string = "1.2.1"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
 
 var defaultConfig = Config{
