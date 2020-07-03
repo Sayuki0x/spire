@@ -365,7 +365,7 @@ func checkConfig() Config {
 
 	_, configErr := os.Stat("keys")
 	if os.IsNotExist(configErr) {
-		log.Debug("Creating configuration folder.")
+		log.Debug("Creating key folder.")
 		os.Mkdir("keys", 0700)
 	}
 	_, pubKeyErr := os.Stat("keys/key.pub")
