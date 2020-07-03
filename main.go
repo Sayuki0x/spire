@@ -33,6 +33,7 @@ var defaultConfig = Config{
 	DbType:             "sqlite3",
 	DbConnectionStr:    "vex-server.db",
 	PublicRegistration: true,
+	Port:               8000,
 	PowerLevels: RequiredPower{
 		Kick:   25,
 		Ban:    50,
