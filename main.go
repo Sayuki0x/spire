@@ -1043,7 +1043,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					if len(userMessage.Username) > config.MaxUsernameLength {
 						nickError := ErrorMessage{
 							Type:           "error",
-							Message:        "The max username length is 9 characters.",
+							Message:        "The max username length is " + strconv.Itoa(config.MaxUsernameLength) + " characters.",
 							MessageID:      uuid.NewV4(),
 							TransmissionID: transmissionID,
 						}
