@@ -34,6 +34,7 @@ var defaultConfig = Config{
 	DbConnectionStr:    "vex-server.db",
 	PublicRegistration: true,
 	Port:               8000,
+	MaxUsernameLength:  10,
 	PowerLevels: RequiredPower{
 		Kick:   25,
 		Ban:    50,
@@ -319,6 +320,7 @@ type Config struct {
 	DbConnectionStr    string        `json:"dbConnectionStr"`
 	PublicRegistration bool          `json:"publicRegistration"`
 	Port               int           `json:"port"`
+	MaxUsernameLength  int           `json:"maxUsernameLength"`
 	PowerLevels        RequiredPower `json:"powerLevels"`
 }
 
@@ -1038,7 +1040,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				if userMessage.Method == "NICK" {
 					oldUsername := clientInfo.Username
 
-					if len(userMessage.Username) > 9 {
+					if len(userMessage.Username) > config.MaxUsernameLength {
 						nickError := ErrorMessage{
 							Type:           "error",
 							Message:        "The max username length is 9 characters.",
@@ -1220,7 +1222,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 				if clientInfo.PowerLevel < config.PowerLevels.Talk {
 					log.Warning("User attempted to chat but doesn't have a high enough power level.")
-					sendError("PWRLVL", "You don't have a high enoug power level to chat.", conn, transmissionID)
+					sendError("PWRLVL", "You don't have a high enough power level to chat.", conn, transmissionID)
 					break
 				}
 				var chatMessage ChatMessage

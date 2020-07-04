@@ -4,6 +4,7 @@
     "dbConnectionStr": "vex-server.db",
     "publicRegistration": true,
     "port": 8000,
+    "maxUsernameLength": 10,
     "powerLevels": {
         "kick": 25,
         "ban": 50,

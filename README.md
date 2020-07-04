@@ -56,7 +56,7 @@ we have a reference node.js cli client [here](https://github.com/ExtraHash/vex-c
 
 The server will automatically start up with sqlite3, but you can configure it to use mysql. See the example configurations in the `example` folder.
 
-Note to run mysql, you need to create the database and apply this command to it:
+Note to run mysql, you will first need to create the database and apply this command to it:
 
 ```sql
 ALTER DATABASE

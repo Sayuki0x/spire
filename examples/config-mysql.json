@@ -4,6 +4,7 @@
     "dbConnectionStr": "dbUser:dbPassword@(dbHostname)/dbName?charset=utf8mb4&collation=utf8mb4_unicode_ci&parseTime=True&loc=Local",
     "publicRegistration": true,
     "port": 8000,
+    "maxUsernameLength": 10,
     "powerLevels": {
         "kick": 25,
         "ban": 50,
