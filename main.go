@@ -26,7 +26,7 @@ var wsClients = []*websocket.Conn{}
 var channelSubs = []*ChannelSub{}
 var homedir, _ = os.UserHomeDir()
 
-const version string = "1.2.1"
+const version string = "1.2.2"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
 
 var defaultConfig = Config{
