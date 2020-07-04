@@ -24,6 +24,7 @@ import (
 
 var wsClients = []*websocket.Conn{}
 var channelSubs = []*ChannelSub{}
+var homedir, _ = os.UserHomeDir()
 
 const version string = "1.2.1"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
@@ -31,7 +32,7 @@ const emptyUserID = "00000000-0000-0000-0000-000000000000"
 var defaultConfig = Config{
 	WelcomeMessage:     "Welcome to the server!",
 	DbType:             "sqlite3",
-	DbConnectionStr:    "vex-server.db",
+	DbConnectionStr:    homedir + "/.vex-server/vex-server.db",
 	PublicRegistration: true,
 	Port:               8000,
 	MaxUsernameLength:  10,
@@ -326,7 +327,7 @@ type Config struct {
 
 // StatusRes is the status http api endpoing response.
 type StatusRes struct {
-	Version   string `json:"version"`
+	Version   string `json:"versiofn"`
 	Status    string `json:"status"`
 	MessageID string `json:"messageID"`
 	PublicKey string `json:"publicKey"`
@@ -434,11 +435,18 @@ func createKeyFiles(keyFolder string) {
 	writeBytesToFile(keyFolder+"/key.priv", keys.Priv)
 }
 
+func checkFolder() {
+	progFolder := homedir + "/.vex-server"
+	if !fileExists(progFolder) {
+		os.Mkdir(progFolder, 0700)
+	}
+}
+
 func checkKeys(cliArgs CliArgs) KeyPair {
 	keyFolder := cliArgs.keyFolder
 
 	if keyFolder == "" {
-		keyFolder = "keys"
+		keyFolder = homedir + "/.vex-server/keys"
 	}
 
 	if !fileExists(keyFolder) {
@@ -557,7 +565,7 @@ func (a *App) Initialize() {
 
 	printASCII()
 
-	// initialize configuration files
+	checkFolder()
 	config := readConfig(cliArgs)
 	keys := checkKeys(cliArgs)
 
@@ -788,7 +796,7 @@ func readConfig(cliArgs CliArgs) Config {
 	configPath := cliArgs.configPath
 
 	if configPath == "" {
-		configPath = "config.json"
+		configPath = homedir + "/.vex-server/config.json"
 	}
 
 	if !fileExists(configPath) {
@@ -803,6 +811,7 @@ func readConfig(cliArgs CliArgs) Config {
 }
 
 func main() {
+	fmt.Println(defaultConfig.DbConnectionStr)
 	a := App{}
 	a.Initialize()
 	log.Info("Starting API on port " + strconv.Itoa(a.Config.Port))
