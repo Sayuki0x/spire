@@ -23,6 +23,8 @@ import (
 )
 
 var wsClients = []*websocket.Conn{}
+var globalClientList = []ConnectedClient{}
+
 var channelSubs = []*ChannelSub{}
 var homedir, _ = os.UserHomeDir()
 
@@ -86,6 +88,13 @@ type ClientInfo struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
 	Client         Client    `json:"client"`
+}
+
+// ConnectedClient is a single client connected to the server.
+type ConnectedClient struct {
+	UserID     uuid.UUID       `json:"userID"`
+	UserEntry  Client          `json:"userEntry"`
+	Connection *websocket.Conn `json:"-"`
 }
 
 // UserInfoMsg is a message from the client with a requested user's info
@@ -481,12 +490,14 @@ type CliArgs struct {
 	keyFolder          string
 	registerKey        string
 	registerPowerLevel int
+	promote            bool
+	promoteKey         string
+	promotePowerLevel  int
 }
 
 func getArgs() CliArgs {
 	// get cli rawArgs
 	rawArgs := os.Args[1:]
-
 	cliArgs := CliArgs{}
 
 	for i, arg := range rawArgs {
@@ -527,6 +538,18 @@ func getArgs() CliArgs {
 				registerPowerLevel, err := strconv.Atoi(rawArgs[i+2])
 				check(err)
 				cliArgs.registerPowerLevel = registerPowerLevel
+			} else {
+				log.Fatal("Register argument requires a public key and powerlevel argument. --register pubkey 100")
+			}
+		}
+
+		if arg == "--promote" {
+			if len(rawArgs) > i+2 {
+				cliArgs.promote = true
+				cliArgs.promoteKey = rawArgs[i+1]
+				promotePowerLevel, err := strconv.Atoi(rawArgs[i+2])
+				check(err)
+				cliArgs.promotePowerLevel = promotePowerLevel
 			} else {
 				log.Fatal("Register argument requires a public key and powerlevel argument. --register pubkey 100")
 			}
@@ -579,6 +602,21 @@ func (a *App) Initialize() {
 	db.AutoMigrate(&ChatMessage{})
 	db.AutoMigrate(&ChannelPermission{})
 	a.Db = db
+
+	if cliArgs.promote {
+		log.Notice("Promoting user with pubkey " + cliArgs.registerKey)
+		var promoteClient Client
+		db.First(&promoteClient, "pub_key = ?", cliArgs.promoteKey)
+
+		if promoteClient.ID == 0 {
+			log.Fatal("Pubkey not found in database.")
+		}
+
+		promoteClient.PowerLevel = cliArgs.promotePowerLevel
+		db.Save(&promoteClient)
+		log.Notice("User promoted to power level " + strconv.Itoa(cliArgs.promotePowerLevel))
+		os.Exit(0)
+	}
 
 	if cliArgs.register {
 		log.Notice("Registering user with pubkey " + cliArgs.registerKey)
@@ -1475,7 +1513,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							sendChannelList(conn, db, clientInfo, sub.TransmissionID)
 
 							// add to global client list
-							wsClients = append(wsClients, conn)
+							connectedClient := ConnectedClient{
+								UserID:     clientInfo.UserID,
+								UserEntry:  clientInfo,
+								Connection: conn,
+							}
+							globalClientList = append(globalClientList, connectedClient)
 						}
 					}
 				}
