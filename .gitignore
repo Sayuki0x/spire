@@ -2,4 +2,4 @@ vex*
 *.db
 config*.json
 dump.json
-keys*
+keys/*

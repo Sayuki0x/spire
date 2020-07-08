@@ -45,9 +45,3 @@ func (a *App) Run(addr string) {
 	err := http.ListenAndServe(addr, a.Router)
 	check(err)
 }
-
-func check(e error) {
-	if e != nil {
-		log.Fatal(e)
-	}
-}
