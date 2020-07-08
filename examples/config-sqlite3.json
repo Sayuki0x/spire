@@ -1,5 +1,4 @@
 {
-    "welcomeMessage": "Welcome to the chat server.",
     "dbType": "sqlite3",
     "dbConnectionStr": "vex-server.db",
     "publicRegistration": true,
