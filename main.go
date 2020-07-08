@@ -299,6 +299,7 @@ type IdentityResponse struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 	UUID           uuid.UUID `json:"uuid"`
 	Status         string    `json:"status"`
+	PubKey         string    `json:"serverPubkey"`
 }
 
 // ErrorMessage is a general error message to be displayed by the client.
@@ -1224,6 +1225,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					for _, chanSub := range channelSubs {
 						if chanSub.UserID == permMsg.Permission.UserID {
+							// TODO: SEND THEM THE CHANNEL LIST INSTEAD
 							sendSuccess("You have been granted access to a new channel. Check /channel ls for details.", chanSub.Connection, transmissionID)
 						}
 					}
@@ -1522,6 +1524,36 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						}
 					}
 				}
+			case "historyReq_v2":
+				if !authed {
+					log.Warning("Not authorized!")
+					conn.Close()
+					break
+				}
+				var historyReq HistoryReqMessage
+				json.Unmarshal(msg, &historyReq)
+
+				log.Debug("IN", historyReq)
+
+				var topMessage ChatMessage
+				db.First(&topMessage, "message_id = ?", historyReq.TopMessage)
+
+				// retrieve history and send to client
+				messages := []ChatMessage{}
+				db.Where("id > ?", topMessage.ID).Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
+
+				for _, msg := range messages {
+					msg.Type = "history"
+					sendMessage(msg, conn)
+				}
+
+				successMsg := SuccessMessage{
+					Type:           "historyReqRes",
+					TransmissionID: transmissionID,
+					MessageID:      uuid.NewV4(),
+					Status:         "SUCCESS",
+				}
+				sendMessage(successMsg, conn)
 			case "historyReq":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -1558,8 +1590,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 				var user Client
 				db.First(&user, "pub_key = ?", challengeMessage.PubKey)
-
-				fmt.Println(user)
 
 				if challengeMessage.TransmissionID.String() == emptyUserID {
 					sendError("VRSNERR", "You are using an unsupported client. Please upgrade.", conn, transmissionID)
@@ -1619,6 +1649,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					identityResponse.UUID = uuid.NewV4()
 					identityResponse.MessageID = uuid.NewV4()
 					identityResponse.TransmissionID = transmissionID
+					identityResponse.PubKey = hex.EncodeToString(keys.Pub)
 					identityResponse.Status = "SUCCESS"
 
 					// create the new uuid
@@ -1654,6 +1685,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							idResponse.TransmissionID = transmissionID
 							idResponse.MessageID = uuid.NewV4()
 							idResponse.Status = "SUCCESS"
+							idResponse.PubKey = hex.EncodeToString(keys.Pub)
 							idResponse.UUID = identityMessage.UUID
 
 							sendMessage(idResponse, conn)
