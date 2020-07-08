@@ -5,9 +5,20 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/gorilla/mux"
 	uuid "github.com/satori/go.uuid"
 	"golang.org/x/crypto/ed25519"
 )
+
+func getRouter(a *App) *mux.Router {
+	// initialize router
+	router := mux.NewRouter()
+	router.Handle("/socket", SocketHandler(a.Keys, a.Db, a.Config)).Methods("GET")
+	router.Handle("/", HomeHandler(a.Keys.Pub)).Methods("GET")
+	router.Handle("/status", StatusHandler(a.Keys.Pub)).Methods("GET")
+
+	return router
+}
 
 // GetIP from http request
 func GetIP(r *http.Request) string {

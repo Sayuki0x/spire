@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -17,11 +16,12 @@ type App struct {
 	Router *mux.Router
 	Db     *gorm.DB
 	Log    *logging.Logger
+	Args   CliArgs
+	Keys   KeyPair
 	Config Config
 }
 
 func main() {
-	fmt.Println(defaultConfig.DbConnectionStr)
 	a := App{}
 	a.Initialize()
 	log.Info("Starting API on port " + strconv.Itoa(a.Config.Port))
@@ -31,21 +31,13 @@ func main() {
 // Initialize does the initialization of App.
 func (a *App) Initialize() {
 	LoggerConfig()
-	cliArgs := getArgs()
+	a.Args = getArgs()
 	printASCII()
 	checkFolder()
-	config := readConfig(cliArgs)
-	keys := checkKeys(cliArgs)
-	a.Db = getDB(config)
-	a.Config = config
-
-	// initialize router
-	router := mux.NewRouter()
-	router.Handle("/socket", SocketHandler(keys, a.Db, config)).Methods("GET")
-	router.Handle("/", HomeHandler(keys.Pub)).Methods("GET")
-	router.Handle("/status", StatusHandler(keys.Pub)).Methods("GET")
-
-	a.Router = router
+	a.Config = readConfig(a.Args)
+	a.Keys = checkKeys(a.Args)
+	a.Db = getDB(a.Config)
+	a.Router = getRouter(a)
 }
 
 // Run starts the vex server.
