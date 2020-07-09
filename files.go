@@ -20,6 +20,21 @@ func readBytesFromFile(filename string) []byte {
 	return bytes
 }
 
+func saveUploadedFile(filename string, data []byte) {
+	// Open a new file for writing only
+	file, openErr := os.OpenFile(
+		FileFolder+"/"+filename,
+		os.O_WRONLY|os.O_TRUNC|os.O_CREATE,
+		0666,
+	)
+	check(openErr)
+
+	defer file.Close()
+
+	_, writeErr := file.Write(data)
+	check(writeErr)
+}
+
 func writeBytesToFile(filename string, bytes []byte) bool {
 	file, openErr := os.OpenFile(filename, os.O_RDWR, 0700)
 	check(openErr)

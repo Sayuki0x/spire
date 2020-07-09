@@ -15,6 +15,15 @@ type Model struct {
 	DeletedAt *time.Time `json:"-" sql:"index"`
 }
 
+// Files are uploaded files
+type File struct {
+	Model
+	FileID    uuid.UUID `json:"fileID"`
+	FileName  string    `json:"fileName"`
+	ChannelID uuid.UUID `json:"channelID"`
+	OwnerID   uuid.UUID `json:"ownerID"`
+}
+
 // ChatModel is similar to Model but shows createdAt key
 type ChatModel struct {
 	ID        uint       `json:"index" gorm:"primary_key"`
@@ -87,5 +96,6 @@ func getDB(config Config) *gorm.DB {
 	db.AutoMigrate(&Channel{})
 	db.AutoMigrate(&ChatMessage{})
 	db.AutoMigrate(&ChannelPermission{})
+	db.AutoMigrate(&File{})
 	return db
 }

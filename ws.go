@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -73,7 +74,7 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, trans
 	sendMessage(channelPush, conn)
 }
 
-func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, transmissionID uuid.UUID, sendingConnection *websocket.Conn) {
+func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnection *websocket.Conn) {
 	db.Create(&Chat)
 
 	Chat.UserID = clientInfo.UserID
@@ -82,8 +83,6 @@ func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, transmissionID 
 	Chat.Username = clientInfo.Username
 
 	db.Save(&Chat)
-
-	sendSuccess(sendingConnection, transmissionID, Chat)
 
 	found := false
 	for _, sub := range channelSubs {
@@ -322,6 +321,22 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					sendSuccess(conn, transmissionID, clientInfo)
 				}
+			case "file":
+				fileMsg := FileReq{}
+				json.Unmarshal(msg, &fileMsg)
+
+				fmt.Println(fileMsg.Method)
+
+				file, err := hex.DecodeString(fileMsg.File)
+				check(err)
+
+				fileID := uuid.NewV4()
+
+				newFile := File{FileID: fileID, OwnerID: clientInfo.UserID, FileName: fileMsg.Filename, ChannelID: fileMsg.ChannelID}
+				db.Create(&newFile)
+
+				saveUploadedFile(fileID.String(), file)
+				sendSuccess(conn, transmissionID, newFile)
 			case "ping":
 				var pongMsg APIPong
 				json.Unmarshal(msg, &pongMsg)
@@ -433,8 +448,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, chat)
 					break
 				}
-				broadcast(db, chat, clientInfo, transmissionID, conn)
-
+				sendSuccess(conn, transmissionID, chat)
+				broadcast(db, chat, clientInfo, conn)
 			case "channel":
 				if !authed {
 					log.Warning("Not authorized!")

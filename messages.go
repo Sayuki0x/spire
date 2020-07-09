@@ -132,6 +132,15 @@ type IdentityReq struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+type FileReq struct {
+	Type           string    `json:"type"`
+	File           string    `json:"file"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	ChannelID      uuid.UUID `json:"channelID"`
+	Method         string    `json:"method"`
+	Filename       string    `json:"filename"`
+}
+
 ///////////////////////////////////////////////////////////////
 //
 // PUSH MESSAGES
@@ -155,10 +164,10 @@ type ClientPush struct {
 }
 
 func sendMessage(msg interface{}, conn *websocket.Conn) {
+	conn.WriteJSON(msg)
+
 	jsonMessage, _ := json.Marshal(msg)
 	log.Debug("OUT", string(jsonMessage))
-
-	conn.WriteJSON(msg)
 }
 
 func sendError(code string, message string, conn *websocket.Conn, transmissionID uuid.UUID, request interface{}) {

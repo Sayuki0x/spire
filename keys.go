@@ -7,6 +7,9 @@ import (
 	"os"
 )
 
+var ProgFolder = ""
+var FileFolder = ""
+
 // KeyPair is a type that contains a Public and private ed25519 key.
 type KeyPair struct {
 	Pub  ed25519.PublicKey
@@ -30,9 +33,14 @@ func createKeyFiles(keyFolder string) {
 }
 
 func checkFolder() {
-	progFolder := homedir + "/.vex-server"
-	if !fileExists(progFolder) {
-		os.Mkdir(progFolder, 0700)
+	ProgFolder = homedir + "/.vex-server"
+	if !fileExists(ProgFolder) {
+		os.Mkdir(ProgFolder, 0700)
+	}
+
+	FileFolder = homedir + "/.vex-server/files"
+	if !fileExists(FileFolder) {
+		os.Mkdir(FileFolder, 0700)
 	}
 }
 

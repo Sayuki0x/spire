@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/jinzhu/gorm"
 	uuid "github.com/satori/go.uuid"
 	"golang.org/x/crypto/ed25519"
 )
@@ -16,6 +17,7 @@ func getRouter(a *App) *mux.Router {
 	router.Handle("/socket", SocketHandler(a.Keys, a.Db, a.Config)).Methods("GET")
 	router.Handle("/", HomeHandler(a.Keys.Pub)).Methods("GET")
 	router.Handle("/status", StatusHandler(a.Keys.Pub)).Methods("GET")
+	router.Handle("/file/{fileID}", FileHandler(a.Db)).Methods("GET")
 
 	return router
 }
@@ -27,6 +29,29 @@ func GetIP(r *http.Request) string {
 		return forwarded
 	}
 	return r.RemoteAddr
+}
+
+func FileHandler(db *gorm.DB) http.Handler {
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		log.Info(req.Method, req.URL, GetIP(req))
+
+		vars := mux.Vars(req)
+		fileID := vars["fileID"]
+
+		var file File
+
+		db.First(&file, "file_id = ? ", fileID)
+
+		if file.ID == 0 {
+			log.Warning("Non existant file.")
+			http.Error(res, "404 not found.", 404)
+		} else {
+			file := readJSONFile(FileFolder + "/" + fileID)
+
+			res.Write(file)
+		}
+
+	})
 }
 
 // StatusHandler handles the status endpoint.
