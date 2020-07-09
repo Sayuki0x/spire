@@ -12,6 +12,7 @@
         "revoke": 50,
         "talk": 0,
         "create": 50,
-        "delete": 50
+        "delete": 50,
+        "files": 25
     }
 }

@@ -135,6 +135,7 @@ type IdentityReq struct {
 type FileReq struct {
 	Type           string    `json:"type"`
 	File           string    `json:"file"`
+	FileID         string    `json:"fileID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
 	ChannelID      uuid.UUID `json:"channelID"`
 	Method         string    `json:"method"`

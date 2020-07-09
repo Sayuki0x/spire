@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -182,8 +181,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 			switch message.Type {
 			case "user":
 				if !authed {
+					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
 					log.Warning("Not authorized!")
-					conn.Close()
 					break
 				}
 
@@ -322,21 +321,70 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					sendSuccess(conn, transmissionID, clientInfo)
 				}
 			case "file":
+
+				if !authed {
+					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
+					log.Warning("Not authorized!")
+					break
+				}
+
 				fileMsg := FileReq{}
 				json.Unmarshal(msg, &fileMsg)
 
-				fmt.Println(fileMsg.Method)
+				if fileMsg.Method == "DELETE" {
+					file := File{}
+					db.Where("file_id = ?", fileMsg.FileID).Find(&file)
+					if file.ID == 0 {
+						sendError("NOEXIST", "The requested file doesn't exist.", conn, transmissionID, fileMsg)
+					}
 
-				file, err := hex.DecodeString(fileMsg.File)
-				check(err)
+					if file.OwnerID != clientInfo.UserID && clientInfo.PowerLevel < 25 {
+						sendError("NOPERM", "You don't have permission to delete that file.", conn, transmissionID, fileMsg)
+					}
+					db.Delete(&file)
+					sendSuccess(conn, transmissionID, file)
+					break
+				}
 
-				fileID := uuid.NewV4()
+				var requestedChannel Channel
+				db.First(&requestedChannel, "channel_id = ?", fileMsg.ChannelID.String())
 
-				newFile := File{FileID: fileID, OwnerID: clientInfo.UserID, FileName: fileMsg.Filename, ChannelID: fileMsg.ChannelID}
-				db.Create(&newFile)
+				if !requestedChannel.Public {
+					hasPermission := false
 
-				saveUploadedFile(fileID.String(), file)
-				sendSuccess(conn, transmissionID, newFile)
+					cPerms := []ChannelPermission{}
+					db.Where("user_id = ?", clientInfo.UserID).Find(&cPerms)
+
+					for _, perm := range cPerms {
+						if perm.ChannelID == requestedChannel.ChannelID {
+							hasPermission = true
+						}
+					}
+
+					if !hasPermission {
+						log.Warning("User is sending file to channel he has no access to.")
+						sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, fileMsg)
+						break
+					}
+				}
+
+				if fileMsg.Method == "CREATE" {
+					file, err := hex.DecodeString(fileMsg.File)
+					check(err)
+					fileID := uuid.NewV4()
+					newFile := File{FileID: fileID, OwnerID: clientInfo.UserID, FileName: fileMsg.Filename, ChannelID: fileMsg.ChannelID}
+					db.Create(&newFile)
+					saveUploadedFile(fileID.String(), file)
+					sendSuccess(conn, transmissionID, newFile)
+					break
+				}
+
+				if fileMsg.Method == "RETRIEVE" {
+					files := []File{}
+					db.Where("channel_id = ?", fileMsg.ChannelID).Find(&files)
+					sendSuccess(conn, transmissionID, files)
+					break
+				}
 			case "ping":
 				var pongMsg APIPong
 				json.Unmarshal(msg, &pongMsg)
@@ -345,8 +393,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				sendMessage(pongMsg, conn)
 			case "channelPerm":
 				if !authed {
+					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
 					log.Warning("Not authorized!")
-					conn.Close()
 					break
 				}
 
@@ -435,13 +483,35 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 			case "chat":
 				if !authed {
+					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
 					log.Warning("Not authorized!")
-					conn.Close()
 					break
 				}
 
 				var chat ChatMessage
 				json.Unmarshal(msg, &chat)
+
+				var requestedChannel Channel
+				db.First(&requestedChannel, "channel_id = ?", chat.ChannelID.String())
+
+				if !requestedChannel.Public {
+					hasPermission := false
+
+					cPerms := []ChannelPermission{}
+					db.Where("user_id = ?", clientInfo.UserID).Find(&cPerms)
+
+					for _, perm := range cPerms {
+						if perm.ChannelID == requestedChannel.ChannelID {
+							hasPermission = true
+						}
+					}
+
+					if !hasPermission {
+						log.Warning("User is sending chat to channel he has no access to.")
+						sendError("NOACCESS", "You don't have permission to send chat to that channel.", conn, transmissionID, chat)
+						break
+					}
+				}
 
 				if clientInfo.PowerLevel < config.PowerLevels.Talk {
 					log.Warning("User attempted to chat but doesn't have a high enough power level.")
@@ -452,8 +522,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				broadcast(db, chat, clientInfo, conn)
 			case "channel":
 				if !authed {
+					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
 					log.Warning("Not authorized!")
-					conn.Close()
 					break
 				}
 
@@ -662,8 +732,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 			case "historyReq":
 				if !authed {
+					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
 					log.Warning("Not authorized!")
-					conn.Close()
 					break
 				}
 				var historyReq HistoryReq

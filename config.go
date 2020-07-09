@@ -17,6 +17,7 @@ type RequiredPower struct {
 	Talk   int `json:"talk"`
 	Create int `json:"create"`
 	Delete int `json:"delete"`
+	Files  int `json:"files"`
 }
 
 // Config is the user supplied json config
@@ -45,6 +46,7 @@ var defaultConfig = Config{
 		Talk:   0,
 		Create: 50,
 		Delete: 50,
+		Files:  25,
 	},
 }
 
