@@ -338,7 +338,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						sendError("NOEXIST", "The requested file doesn't exist.", conn, transmissionID, fileMsg)
 					}
 
-					if file.OwnerID != clientInfo.UserID && clientInfo.PowerLevel < 25 {
+					if file.OwnerID != clientInfo.UserID && clientInfo.PowerLevel < config.PowerLevels.Files {
 						sendError("NOPERM", "You don't have permission to delete that file.", conn, transmissionID, fileMsg)
 					}
 					db.Delete(&file)
