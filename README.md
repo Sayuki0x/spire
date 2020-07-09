@@ -39,10 +39,6 @@ go build
 ./vex-server
 ```
 
-## Client
-
-we have a reference node.js cli client [here](https://github.com/ExtraHash/vex-chat).
-
 ## Installation
 
 1. Download the latest binary from the [releases page](https://github.com/ExtraHash/vex-server/releases)
