@@ -493,7 +493,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					}
 
 					db.Create(&newChannel)
-					sendChannelList(conn, db, clientInfo, transmissionID)
+					sendSuccess(conn, transmissionID, newChannel)
 				}
 
 				if channelMessage.Method == "RETRIEVE" {
