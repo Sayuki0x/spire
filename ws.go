@@ -45,11 +45,8 @@ func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
 
 func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, transmissionID uuid.UUID) {
 	channels := []Channel{}
-
 	db.Where("public = ?", true).Find(&channels)
-
 	channelPerms := []ChannelPermission{}
-
 	db.Where("user_id = ?", clientInfo.UserID).Find(&channelPerms)
 
 	for _, perm := range channelPerms {
