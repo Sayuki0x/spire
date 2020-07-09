@@ -138,13 +138,12 @@ type IdentityReq struct {
 //
 ///////////////////////////////////////////////////////////////
 
-// ChatPush is a type for emitted chat messages.
-
 // ChannelListPush is a message with a list of the user's permissioned channels.
 type ChannelListPush struct {
-	Type      string    `json:"type"`
-	MessageID uuid.UUID `json:"messageID"`
-	Channels  []Channel `json:"channels"`
+	Type           string    `json:"type"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	Channels       []Channel `json:"data"`
 }
 
 // ClientPush is a message to the client with their login info

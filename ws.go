@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -69,22 +68,25 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, trans
 	}
 
 	channelPush := ChannelListPush{
-		Type:      "channelList",
-		MessageID: uuid.NewV4(),
-		Channels:  orderedChannels,
+		Type:           "channelList",
+		MessageID:      uuid.NewV4(),
+		TransmissionID: transmissionID,
+		Channels:       orderedChannels,
 	}
 	sendMessage(channelPush, conn)
 }
 
-func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, transmissionID uuid.UUID) {
+func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, transmissionID uuid.UUID, sendingConnection *websocket.Conn) {
 	db.Create(&Chat)
 
 	Chat.UserID = clientInfo.UserID
 	Chat.MessageID = uuid.NewV4()
-	Chat.TransmissionID = transmissionID
+	Chat.TransmissionID = uuid.NewV4()
 	Chat.Username = clientInfo.Username
 
 	db.Save(&Chat)
+
+	sendSuccess(sendingConnection, transmissionID, Chat)
 
 	found := false
 	for _, sub := range channelSubs {
@@ -426,16 +428,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					break
 				}
 
-				var Chat ChatMessage
-				json.Unmarshal(msg, &Chat)
+				var chat ChatMessage
+				json.Unmarshal(msg, &chat)
 
 				if clientInfo.PowerLevel < config.PowerLevels.Talk {
 					log.Warning("User attempted to chat but doesn't have a high enough power level.")
-					sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, Chat)
+					sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, chat)
 					break
 				}
+				broadcast(db, chat, clientInfo, transmissionID, conn)
 
-				broadcast(db, Chat, clientInfo, transmissionID)
 			case "channel":
 				if !authed {
 					log.Warning("Not authorized!")
@@ -452,7 +454,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							break
 						}
 						scanCompleted := false
-						fmt.Println(channelMessage)
 						for i, sb := range channelSubs {
 							if sb.ChannelID == channelMessage.ChannelID && sb.UserID == clientInfo.UserID && sb.Connection == conn {
 								sendSuccess(sb.Connection, transmissionID, sb)
@@ -601,7 +602,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					sendSuccess(conn, transmissionID, newSub)
 				}
 
-			case "challengeRes":
+			case "response":
 				var challengeResponse Response
 				json.Unmarshal(msg, &challengeResponse)
 
@@ -623,7 +624,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							log.Info("User authorized successfully.")
 							authed = true
 
-							sendSuccess(conn, transmissionID, challengeResponse.Response)
+							sendSuccess(conn, transmissionID, clientInfo)
 
 							// give client their user info
 							clientMsg := ClientPush{
@@ -691,7 +692,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				clientInfo = user
 
 				var challengeResponse Response
-				challengeResponse.Type = "challengeRes"
+				challengeResponse.Type = "response"
 				challengeResponse.MessageID = uuid.NewV4()
 				challengeResponse.TransmissionID = transmissionID
 				challengeResponse.Response = hex.EncodeToString(ed25519.Sign(keys.Priv, []byte(challengeMessage.Challenge.String())))

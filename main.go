@@ -37,6 +37,7 @@ func (a *App) Initialize() {
 	a.Config = readConfig(a.Args)
 	a.Keys = checkKeys(a.Args)
 	a.Db = getDB(a.Config)
+	runUtils(a.Args, a.Db)
 	a.Router = getRouter(a)
 }
 
