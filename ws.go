@@ -25,6 +25,7 @@ type ChannelSub struct {
 	UserID     uuid.UUID       `json:"userID"`
 	ChannelID  uuid.UUID       `json:"channelID"`
 	Connection *websocket.Conn `json:"-"`
+	UserEntry  Client          `json:"userEntry"`
 }
 
 // ChallengeSub is a subscription by the server to a challenge transmission ID.
@@ -43,7 +44,7 @@ func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
 	}
 }
 
-func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, transmissionID uuid.UUID) {
+func getChannelList(clientInfo Client, db *gorm.DB) []Channel {
 	channels := []Channel{}
 	db.Where("public = ?", true).Find(&channels)
 	channelPerms := []ChannelPermission{}
@@ -58,19 +59,87 @@ func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, trans
 	}
 
 	orderedChannels := []Channel{}
-
 	for i, channel := range channels {
 		channel.ID = uint(i + 1)
 		orderedChannels = append(orderedChannels, channel)
 	}
 
+	return orderedChannels
+}
+
+func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, transmissionID uuid.UUID) {
+	channels := getChannelList(clientInfo, db)
+
 	channelPush := ChannelListPush{
 		Type:           "channelList",
 		MessageID:      uuid.NewV4(),
 		TransmissionID: transmissionID,
-		Channels:       orderedChannels,
+		Channels:       channels,
 	}
+
 	sendMessage(channelPush, conn)
+}
+
+type OnlineList struct {
+	Type           string    `json:"type"`
+	MessageID      uuid.UUID `json:"messageID"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	ChannelID      uuid.UUID `json:"channelID"`
+	Users          []Client  `json:"data"`
+}
+
+func getOnlineList(channelID uuid.UUID) []Client {
+	usersInChannel := []Client{}
+
+	for _, sub := range channelSubs {
+		if sub.ChannelID == channelID {
+			usersInChannel = append(usersInChannel, sub.UserEntry)
+		}
+	}
+
+	return usersInChannel
+}
+
+func hasChannelPermission(channelID uuid.UUID, clientInfo Client, db *gorm.DB) bool {
+	hasPermission := false
+
+	var requestedChannel Channel
+	db.First(&requestedChannel, "channel_id = ?", channelID.String())
+
+	if channelID.String() == emptyUserID {
+		return false
+	}
+
+	if !requestedChannel.Public {
+
+		cPerms := []ChannelPermission{}
+		db.Where("user_id = ?", clientInfo.UserID).Find(&cPerms)
+
+		for _, perm := range cPerms {
+			if perm.ChannelID == requestedChannel.ChannelID {
+				hasPermission = true
+			}
+		}
+	} else {
+		hasPermission = true
+	}
+
+	return hasPermission
+}
+
+func sendOnlineList(channelID uuid.UUID, transmissionID uuid.UUID, db *gorm.DB) {
+	usersInChannel := getOnlineList(channelID)
+
+	for _, sub := range channelSubs {
+		oList := OnlineList{
+			Type:           "onlineList",
+			ChannelID:      channelID,
+			MessageID:      uuid.NewV4(),
+			TransmissionID: transmissionID,
+			Users:          usersInChannel,
+		}
+		sub.Connection.WriteJSON(oList)
+	}
 }
 
 func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnection *websocket.Conn) {
@@ -321,7 +390,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					sendSuccess(conn, transmissionID, clientInfo)
 				}
 			case "file":
-
 				if !authed {
 					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
 					log.Warning("Not authorized!")
@@ -349,23 +417,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var requestedChannel Channel
 				db.First(&requestedChannel, "channel_id = ?", fileMsg.ChannelID.String())
 
-				if !requestedChannel.Public {
-					hasPermission := false
-
-					cPerms := []ChannelPermission{}
-					db.Where("user_id = ?", clientInfo.UserID).Find(&cPerms)
-
-					for _, perm := range cPerms {
-						if perm.ChannelID == requestedChannel.ChannelID {
-							hasPermission = true
-						}
-					}
-
-					if !hasPermission {
-						log.Warning("User is sending file to channel he has no access to.")
-						sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, fileMsg)
-						break
-					}
+				if !hasChannelPermission(requestedChannel.ChannelID, clientInfo, db) {
+					log.Warning("User is sending file to channel he has no access to.")
+					sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, fileMsg)
+					break
 				}
 
 				if fileMsg.Method == "CREATE" {
@@ -494,23 +549,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var requestedChannel Channel
 				db.First(&requestedChannel, "channel_id = ?", chat.ChannelID.String())
 
-				if !requestedChannel.Public {
-					hasPermission := false
-
-					cPerms := []ChannelPermission{}
-					db.Where("user_id = ?", clientInfo.UserID).Find(&cPerms)
-
-					for _, perm := range cPerms {
-						if perm.ChannelID == requestedChannel.ChannelID {
-							hasPermission = true
-						}
-					}
-
-					if !hasPermission {
-						log.Warning("User is sending chat to channel he has no access to.")
-						sendError("NOACCESS", "You don't have permission to send chat to that channel.", conn, transmissionID, chat)
-						break
-					}
+				if !hasChannelPermission(requestedChannel.ChannelID, clientInfo, db) {
+					log.Warning("User is sending file to channel he has no access to.")
+					sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, chat)
+					break
 				}
 
 				if clientInfo.PowerLevel < config.PowerLevels.Talk {
@@ -529,6 +571,21 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 				var channelMessage ChannelReq
 				json.Unmarshal(msg, &channelMessage)
+
+				if channelMessage.ChannelID.String() == emptyUserID {
+					sendError("BADREQ", "Malformed request or no channel ID included.", conn, transmissionID, channelMessage)
+					break
+				}
+
+				if channelMessage.Method == "ACTIVE" {
+					if !hasChannelPermission(channelMessage.ChannelID, clientInfo, db) {
+						log.Warning("User is requesting online list to channel he has no access to.")
+						sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, channelMessage)
+						break
+					}
+
+					sendSuccess(conn, transmissionID, getOnlineList(channelMessage.ChannelID))
+				}
 
 				if channelMessage.Method == "LEAVE" {
 					for true {
@@ -555,7 +612,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 
 				if channelMessage.Method == "CREATE" {
-
 					if clientInfo.PowerLevel < config.PowerLevels.Create {
 						log.Warning("User does not have channel create permissions.")
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, channelMessage)
@@ -579,10 +635,16 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					db.Create(&newChannel)
 					sendSuccess(conn, transmissionID, newChannel)
+
+					for _, client := range globalClientList {
+						sendChannelList(client.Connection, db, client.UserEntry, uuid.NewV4())
+					}
+					break
 				}
 
 				if channelMessage.Method == "RETRIEVE" {
-					sendChannelList(conn, db, clientInfo, transmissionID)
+					sendSuccess(conn, transmissionID, getChannelList(clientInfo, db))
+					break
 				}
 
 				if channelMessage.Method == "DELETE" {
@@ -628,6 +690,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						}
 					}
 					sendSuccess(conn, transmissionID, deletedChannel)
+					for _, client := range globalClientList {
+						sendChannelList(client.Connection, db, client.UserEntry, uuid.NewV4())
+					}
+					break
 				}
 
 				if channelMessage.Method == "JOIN" {
@@ -635,23 +701,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					var requestedChannel Channel
 					db.First(&requestedChannel, "channel_id = ?", channelMessage.ChannelID.String())
 
-					if !requestedChannel.Public {
-						hasPermission := false
-
-						cPerms := []ChannelPermission{}
-						db.Where("user_id = ?", clientInfo.UserID).Find(&cPerms)
-
-						for _, perm := range cPerms {
-							if perm.ChannelID == requestedChannel.ChannelID {
-								hasPermission = true
-							}
-						}
-
-						if !hasPermission {
-							log.Warning("User is requesting access to channel he does not have permission to.")
-							sendError("NOACCESS", "You don't have permission to that.", conn, transmissionID, channelMessage)
-							break
-						}
+					if !hasChannelPermission(requestedChannel.ChannelID, clientInfo, db) {
+						log.Warning("User is sending file to channel he has no access to.")
+						sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, channelMessage)
+						break
 					}
 
 					if requestedChannel.ID == 0 {
@@ -677,11 +730,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					newSub.UserID = clientInfo.UserID
 					newSub.ChannelID = requestedChannel.ChannelID
 					newSub.Connection = conn
+					newSub.UserEntry = clientInfo
 
 					channelSubs = append(channelSubs, &newSub)
 					joinedChannelIDs = append(joinedChannelIDs, newSub.ChannelID)
 
 					sendSuccess(conn, transmissionID, newSub)
+					sendOnlineList(newSub.ChannelID, uuid.NewV4(), db)
+					break
 				}
 
 			case "response":
