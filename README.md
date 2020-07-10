@@ -80,7 +80,8 @@ On the first run, it will generate a config.json file in the working directory i
         "revoke": 50,
         "talk": 0,
         "create": 50,
-        "delete": 50
+        "delete": 50,
+        "files": 25
     }
 }
 ```
