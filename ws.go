@@ -576,11 +576,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var channelMessage ChannelReq
 				json.Unmarshal(msg, &channelMessage)
 
-				if channelMessage.ChannelID.String() == emptyUserID && channelMessage.Type != "RETRIEVE" {
-					sendError("BADREQ", "Malformed request or no channel ID included.", conn, transmissionID, channelMessage)
-					break
-				}
-
 				if channelMessage.Method == "ACTIVE" {
 					if !hasChannelPermission(channelMessage.ChannelID, clientInfo, db) {
 						log.Warning("User is requesting online list to channel he has no access to.")
@@ -592,6 +587,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 
 				if channelMessage.Method == "LEAVE" {
+					if channelMessage.ChannelID.String() == emptyUserID {
+						sendError("BADREQ", "Malformed request or no channel ID included.", conn, transmissionID, channelMessage)
+						break
+					}
+
 					for true {
 						if len(channelSubs) == 0 {
 							break
@@ -658,6 +658,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, channelMessage)
 						break
 					}
+					if channelMessage.ChannelID.String() == emptyUserID {
+						sendError("BADREQ", "Malformed request or no channel ID included.", conn, transmissionID, channelMessage)
+						break
+					}
 					var deletedChannel Channel
 					db.First(&deletedChannel, "channel_id = ?", channelMessage.ChannelID)
 					log.Notice(deletedChannel)
@@ -702,19 +706,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 
 				if channelMessage.Method == "JOIN" {
-
-					var requestedChannel Channel
-					db.First(&requestedChannel, "channel_id = ?", channelMessage.ChannelID.String())
-
-					if !hasChannelPermission(requestedChannel.ChannelID, clientInfo, db) {
-						log.Warning("User is sending file to channel he has no access to.")
-						sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, channelMessage)
+					if channelMessage.ChannelID.String() == emptyUserID {
+						sendError("BADREQ", "Malformed request or no channel ID included.", conn, transmissionID, channelMessage)
 						break
 					}
 
-					if requestedChannel.ID == 0 {
-						log.Warning("Client attempted subscription to nonexistant channel id " + requestedChannel.ChannelID.String())
-						sendError("NOEXIST", "That channel doesn't exist.", conn, transmissionID, channelMessage)
+					if !hasChannelPermission(channelMessage.ChannelID, clientInfo, db) {
+						log.Warning("User is sending file to channel he has no access to.")
+						sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, channelMessage)
 						break
 					}
 
@@ -733,7 +732,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					var newSub ChannelSub
 					newSub.UserID = clientInfo.UserID
-					newSub.ChannelID = requestedChannel.ChannelID
+					newSub.ChannelID = channelMessage.ChannelID
 					newSub.Connection = conn
 					newSub.UserEntry = clientInfo
 
