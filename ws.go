@@ -142,7 +142,7 @@ func sendOnlineList(channelID uuid.UUID, transmissionID uuid.UUID, db *gorm.DB) 
 	}
 }
 
-func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnection *websocket.Conn) {
+func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnection *websocket.Conn, transmissionID uuid.UUID) {
 	db.Create(&Chat)
 
 	Chat.UserID = clientInfo.UserID
@@ -151,6 +151,8 @@ func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnecti
 	Chat.Username = clientInfo.Username
 
 	db.Save(&Chat)
+
+	sendSuccess(sendingConnection, transmissionID, Chat)
 
 	found := false
 	for _, sub := range channelSubs {
@@ -223,6 +225,9 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					if scanComplete {
 						break
 					}
+				}
+				for _, id := range deletedIds {
+					sendOnlineList(id, uuid.NewV4(), db)
 				}
 
 				log.Debug("Subscriptions removed for " + clientInfo.UserID.String())
@@ -560,8 +565,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, chat)
 					break
 				}
-				sendSuccess(conn, transmissionID, chat)
-				broadcast(db, chat, clientInfo, conn)
+				broadcast(db, chat, clientInfo, conn, transmissionID)
 			case "channel":
 				if !authed {
 					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
@@ -598,6 +602,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 								sendSuccess(sb.Connection, transmissionID, sb)
 								// remove this entry from slice
 								channelSubs = append(channelSubs[:i], channelSubs[i+1:]...)
+								sendOnlineList(sb.ChannelID, uuid.NewV4(), db)
 								break
 							}
 
