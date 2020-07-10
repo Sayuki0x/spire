@@ -576,7 +576,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var channelMessage ChannelReq
 				json.Unmarshal(msg, &channelMessage)
 
-				if channelMessage.ChannelID.String() == emptyUserID {
+				if channelMessage.ChannelID.String() == emptyUserID && channelMessage.Type != "RETRIEVE" {
 					sendError("BADREQ", "Malformed request or no channel ID included.", conn, transmissionID, channelMessage)
 					break
 				}
