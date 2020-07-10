@@ -879,6 +879,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					clientKeyPair.Pub, _ = hex.DecodeString(identityMessage.PubKey)
 					sig, _ := hex.DecodeString(identityMessage.Signed)
 
+					var registeredClient Client
+
+					db.First(&registeredClient, "pub_key = ?", hex.EncodeToString(clientKeyPair.Pub))
+					if registeredClient.ID != 0 {
+						sendSuccess(conn, transmissionID, registeredClient)
+						break
+					}
+
 					if ed25519.Verify(clientKeyPair.Pub, []byte(identityMessage.UUID.String()), sig) {
 						var newClient Client
 						db.First(&newClient, "user_id = ?", identityMessage.UUID.String())
