@@ -837,7 +837,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 							sendSuccess(conn, transmissionID, clientInfo)
 
-							conn.WriteJSON(config.PowerLevels)
+							sendPowerlevels(conn, transmissionID, config)
 
 							// give client their user info
 							clientMsg := ClientPush{
