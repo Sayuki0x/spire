@@ -189,10 +189,19 @@ func getActiveChannels(client *Client) []uuid.UUID {
 func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo *Client, sendingConnection *websocket.Conn, transmissionID uuid.UUID) {
 	db.Create(&Chat)
 
-	Chat.UserID = clientInfo.UserID
+	sendingClient := Client{}
+
+	db.First(&sendingClient, "user_id = ?", clientInfo.UserID)
+
+	if sendingClient.ID == 0 {
+		sendError("NOEXIST", "Not sure what happened here. You don't exist!", sendingConnection, transmissionID, Chat)
+		return
+	}
+
+	Chat.UserID = sendingClient.UserID
 	Chat.MessageID = uuid.NewV4()
 	Chat.TransmissionID = uuid.NewV4()
-	Chat.Username = clientInfo.Username
+	Chat.Username = sendingClient.Username
 
 	db.Save(&Chat)
 
