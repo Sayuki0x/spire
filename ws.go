@@ -908,7 +908,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				if topMessage.MessageID.String() == emptyUserID {
 					// retrieve latest and send to client
 					messages := []ChatMessage{}
-					db.Where("channel_id = ?", historyReq.ChannelID).Find(&messages).Order("created_at ASC").Limit(100)
+					db.Limit(100).Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
 					sendSuccess(conn, transmissionID, messages)
 				}
 
