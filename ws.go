@@ -899,16 +899,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 				var historyReq HistoryReq
 				json.Unmarshal(msg, &historyReq)
+				chatMessages := []ChatMessage{}
 
-				log.Debug("IN", historyReq)
-
-				var topMessage ChatMessage
-				db.First(&topMessage, "message_id = ?", historyReq.TopMessage)
-
-				// retrieve history and send to client
-				messages := []ChatMessage{}
-				db.Where("id > ?", topMessage.ID).Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
-				sendSuccess(conn, transmissionID, messages)
+				// TODO: add an offset
+				db.Limit(100).Order("id ASC").Where("channel_id = ?", historyReq.ChannelID).Find(&chatMessages)
+				sendSuccess(conn, transmissionID, chatMessages)
 
 			case "challenge":
 				var challengeMessage Challenge
