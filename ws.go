@@ -907,7 +907,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 				// retrieve history and send to client
 				messages := []ChatMessage{}
-				db.Where("id > ?", topMessage.ID).Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
+				db.Where("id < ?", topMessage.ID).Where("channel_id = ?", historyReq.ChannelID).Find(&messages).Limit(100)
 				sendSuccess(conn, transmissionID, messages)
 			case "challenge":
 				var challengeMessage Challenge
