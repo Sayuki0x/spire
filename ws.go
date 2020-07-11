@@ -127,6 +127,17 @@ func hasChannelPermission(channelID uuid.UUID, clientInfo Client, db *gorm.DB) b
 	return hasPermission
 }
 
+func sendPowerlevels(conn *websocket.Conn, transmissionID uuid.UUID, config Config) {
+	msg := PowerLevelPush{
+		Type:           "powerLevels",
+		MessageID:      uuid.NewV4(),
+		TransmissionID: transmissionID,
+		PowerLevels:    config.PowerLevels,
+	}
+
+	sendMessage(msg, conn)
+}
+
 func sendOnlineList(channelID uuid.UUID, transmissionID uuid.UUID, db *gorm.DB) {
 	usersInChannel := getOnlineList(channelID)
 	for _, sub := range channelSubs {
@@ -503,6 +514,19 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var permMsg PermReq
 				json.Unmarshal(msg, &permMsg)
 
+				if permMsg.Method == "RETRIEVE" {
+					if clientInfo.PowerLevel < config.PowerLevels.Revoke {
+						log.Warning("User not authorized to retrieve channel permissions!")
+						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, permMsg)
+						break
+					}
+					cPerms := []ChannelPermission{}
+					db.Where("channel_id = ?", permMsg.Permission.ChannelID).Find(&cPerms)
+
+					sendSuccess(conn, transmissionID, cPerms)
+					break
+				}
+
 				if permMsg.Method == "CREATE" {
 
 					if clientInfo.PowerLevel < config.PowerLevels.Grant {
@@ -812,6 +836,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							authed = true
 
 							sendSuccess(conn, transmissionID, clientInfo)
+
+							conn.WriteJSON(config.PowerLevels)
 
 							// give client their user info
 							clientMsg := ClientPush{

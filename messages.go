@@ -148,6 +148,13 @@ type FileReq struct {
 //
 ///////////////////////////////////////////////////////////////
 
+type PowerLevelPush struct {
+	Type           string        `json:"type"`
+	MessageID      uuid.UUID     `json:"messageID"`
+	TransmissionID uuid.UUID     `json:"transmissionID"`
+	PowerLevels    RequiredPower `json:"powerLevels"`
+}
+
 // ChannelListPush is a message with a list of the user's permissioned channels.
 type ChannelListPush struct {
 	Type           string    `json:"type"`
