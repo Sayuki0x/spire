@@ -25,7 +25,7 @@ type ChannelSub struct {
 	UserID     uuid.UUID       `json:"userID"`
 	ChannelID  uuid.UUID       `json:"channelID"`
 	Connection *websocket.Conn `json:"-"`
-	UserEntry  Client          `json:"userEntry"`
+	UserEntry  *Client         `json:"userEntry"`
 }
 
 // ChallengeSub is a subscription by the server to a challenge transmission ID.
@@ -85,11 +85,11 @@ type OnlineList struct {
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
 	ChannelID      uuid.UUID `json:"channelID"`
-	Users          []Client  `json:"data"`
+	Users          []*Client `json:"data"`
 }
 
-func getOnlineList(channelID uuid.UUID) []Client {
-	usersInChannel := []Client{}
+func getOnlineList(channelID uuid.UUID) []*Client {
+	usersInChannel := []*Client{}
 
 	for _, sub := range channelSubs {
 		if sub.ChannelID == channelID {
@@ -129,17 +129,40 @@ func hasChannelPermission(channelID uuid.UUID, clientInfo Client, db *gorm.DB) b
 
 func sendOnlineList(channelID uuid.UUID, transmissionID uuid.UUID, db *gorm.DB) {
 	usersInChannel := getOnlineList(channelID)
+	for _, sub := range channelSubs {
+		if sub.ChannelID == channelID {
+			oList := OnlineList{
+				Type:           "onlineList",
+				ChannelID:      channelID,
+				MessageID:      uuid.NewV4(),
+				TransmissionID: transmissionID,
+				Users:          usersInChannel,
+			}
+
+			sendMessage(oList, sub.Connection)
+		}
+	}
+}
+
+func containsUUID(id []uuid.UUID, query uuid.UUID) bool {
+	for _, a := range id {
+		if a == query {
+			return true
+		}
+	}
+	return false
+}
+
+func getActiveChannels(client Client) []uuid.UUID {
+	activeChannels := []uuid.UUID{}
 
 	for _, sub := range channelSubs {
-		oList := OnlineList{
-			Type:           "onlineList",
-			ChannelID:      channelID,
-			MessageID:      uuid.NewV4(),
-			TransmissionID: transmissionID,
-			Users:          usersInChannel,
+		if sub.UserID == client.UserID {
+			activeChannels = append(activeChannels, sub.ChannelID)
 		}
-		sub.Connection.WriteJSON(oList)
 	}
+
+	return activeChannels
 }
 
 func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnection *websocket.Conn, transmissionID uuid.UUID) {
@@ -168,6 +191,31 @@ func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnecti
 		log.Warning("Client is sending message to channel that is not active.")
 		db.Delete(&Chat)
 	}
+}
+
+func getUsersInChannels(channelList []uuid.UUID) []*Client {
+	effectedUsers := []*Client{}
+
+	for _, sub := range channelSubs {
+		effected := false
+		if containsUUID(channelList, sub.ChannelID) {
+			effected = true
+		}
+		if effected {
+			effectedUsers = append(effectedUsers, sub.UserEntry)
+		}
+	}
+
+	return effectedUsers
+}
+
+func getConnection(userID uuid.UUID) *websocket.Conn {
+	for _, client := range globalClientList {
+		if client.UserID == userID {
+			return client.Connection
+		}
+	}
+	return nil
 }
 
 // SocketHandler handles the websocket connection messages and responses.
@@ -359,8 +407,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 				// can only be used by yourself
 				if userMessage.Method == "NICK" {
-					oldUsername := clientInfo.Username
-
 					if len(userMessage.Username) > config.MaxUsernameLength {
 						sendError("MAXLENGTH", "The max username length is "+strconv.Itoa(config.MaxUsernameLength)+" characters.", conn, transmissionID, userMessage)
 						break
@@ -368,31 +414,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					db.Model(&clientInfo).Update("username", userMessage.Username)
 					clientInfo.Username = userMessage.Username
-					// broadcast the nick change message
-					var userNickChgMsg ChatMessage
-
-					db.Create(&userNickChgMsg)
-
-					userNickChgMsg.Type = "chat"
-					userNickChgMsg.ChannelID = userMessage.ChannelID
-					userNickChgMsg.MessageID = uuid.NewV4()
-					userNickChgMsg.TransmissionID = transmissionID
-					userNickChgMsg.Method = "CREATE"
-					userNickChgMsg.Type = "chat"
-					userNickChgMsg.Username = "Server Message"
-					userNickChgMsg.Message = oldUsername + " changed their nickname to " + userMessage.Username
-
-					db.Save(&userNickChgMsg)
-
-					clientInfo.Username = userMessage.Username
-
-					for _, sub := range channelSubs {
-						if sub.ChannelID == userMessage.ChannelID {
-							sendMessage(userNickChgMsg, sub.Connection)
-						}
-					}
 
 					sendSuccess(conn, transmissionID, clientInfo)
+					activeChannels := getActiveChannels(clientInfo)
+
+					for _, id := range activeChannels {
+						sendOnlineList(id, uuid.NewV4(), db)
+					}
+
 				}
 			case "file":
 				if !authed {
@@ -469,7 +498,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						break
 					}
 
-					// if it's the empty uuid
+					// if it'id the empty uuid
 					if permMsg.Permission.UserID.String() == emptyUserID {
 						sendError("BADREQ", "Request missing required userID parameter.", conn, transmissionID, permMsg)
 						break
@@ -734,7 +763,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					newSub.UserID = clientInfo.UserID
 					newSub.ChannelID = channelMessage.ChannelID
 					newSub.Connection = conn
-					newSub.UserEntry = clientInfo
+					newSub.UserEntry = &clientInfo
 
 					channelSubs = append(channelSubs, &newSub)
 					joinedChannelIDs = append(joinedChannelIDs, newSub.ChannelID)
