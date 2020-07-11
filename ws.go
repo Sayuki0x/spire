@@ -16,7 +16,7 @@ import (
 // ConnectedClient is a single client connected to the server.
 type ConnectedClient struct {
 	UserID     uuid.UUID       `json:"userID"`
-	UserEntry  Client          `json:"userEntry"`
+	UserEntry  *Client         `json:"userEntry"`
 	Connection *websocket.Conn `json:"-"`
 }
 
@@ -44,7 +44,7 @@ func killUnauthedConnection(authed *bool, conn *websocket.Conn) {
 	}
 }
 
-func getChannelList(clientInfo Client, db *gorm.DB) []Channel {
+func getChannelList(clientInfo *Client, db *gorm.DB) []Channel {
 	channels := []Channel{}
 	db.Where("public = ?", true).Find(&channels)
 	channelPerms := []ChannelPermission{}
@@ -67,7 +67,7 @@ func getChannelList(clientInfo Client, db *gorm.DB) []Channel {
 	return orderedChannels
 }
 
-func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo Client, transmissionID uuid.UUID) {
+func sendChannelList(conn *websocket.Conn, db *gorm.DB, clientInfo *Client, transmissionID uuid.UUID) {
 	channels := getChannelList(clientInfo, db)
 
 	channelPush := ChannelListPush{
@@ -100,7 +100,7 @@ func getOnlineList(channelID uuid.UUID) []*Client {
 	return usersInChannel
 }
 
-func hasChannelPermission(channelID uuid.UUID, clientInfo Client, db *gorm.DB) bool {
+func hasChannelPermission(channelID uuid.UUID, clientInfo *Client, db *gorm.DB) bool {
 	hasPermission := false
 
 	var requestedChannel Channel
@@ -164,7 +164,7 @@ func containsUUID(id []uuid.UUID, query uuid.UUID) bool {
 	return false
 }
 
-func sendClientInfo(conn *websocket.Conn, transmissionID uuid.UUID, clientInfo Client) {
+func sendClientInfo(conn *websocket.Conn, transmissionID uuid.UUID, clientInfo *Client) {
 	// give client their user info
 	clientMsg := ClientPush{
 		Type:      "clientInfo",
@@ -174,7 +174,7 @@ func sendClientInfo(conn *websocket.Conn, transmissionID uuid.UUID, clientInfo C
 	sendMessage(clientMsg, conn)
 }
 
-func getActiveChannels(client Client) []uuid.UUID {
+func getActiveChannels(client *Client) []uuid.UUID {
 	activeChannels := []uuid.UUID{}
 
 	for _, sub := range channelSubs {
@@ -186,7 +186,7 @@ func getActiveChannels(client Client) []uuid.UUID {
 	return activeChannels
 }
 
-func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo Client, sendingConnection *websocket.Conn, transmissionID uuid.UUID) {
+func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo *Client, sendingConnection *websocket.Conn, transmissionID uuid.UUID) {
 	db.Create(&Chat)
 
 	Chat.UserID = clientInfo.UserID
@@ -267,7 +267,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 		authed := false
 		go killUnauthedConnection(&authed, conn)
 
-		var clientInfo Client
+		var clientInfo *Client
 
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -432,9 +432,9 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 								Type:           "clientInfo",
 								MessageID:      uuid.NewV4(),
 								TransmissionID: transmissionID,
-								Client:         clientToUpdate,
+								Client:         &clientToUpdate,
 							}
-							sub.UserEntry = clientToUpdate
+							sub.UserEntry = &clientToUpdate
 							sendMessage(clientMsg, conn)
 						}
 					}
@@ -454,7 +454,6 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					for _, client := range globalClientList {
 						if client.UserID == clientInfo.UserID {
-							client.UserEntry = clientInfo
 							sendClientInfo(client.Connection, transmissionID, clientInfo)
 						}
 					}
@@ -820,7 +819,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					newSub.UserID = clientInfo.UserID
 					newSub.ChannelID = channelMessage.ChannelID
 					newSub.Connection = conn
-					newSub.UserEntry = &clientInfo
+					newSub.UserEntry = clientInfo
 
 					channelSubs = append(channelSubs, &newSub)
 					joinedChannelIDs = append(joinedChannelIDs, newSub.ChannelID)
@@ -911,7 +910,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					conn.Close()
 				}
 
-				clientInfo = user
+				clientInfo = &user
 
 				var challengeResponse Response
 				challengeResponse.Type = "response"

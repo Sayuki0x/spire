@@ -168,7 +168,7 @@ type ClientPush struct {
 	Type           string    `json:"type"`
 	MessageID      uuid.UUID `json:"messageID"`
 	TransmissionID uuid.UUID `json:"transmissionID"`
-	Client         Client    `json:"client"`
+	Client         *Client   `json:"client"`
 }
 
 func sendMessage(msg interface{}, conn *websocket.Conn) {
