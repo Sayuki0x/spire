@@ -454,6 +454,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					for _, client := range globalClientList {
 						if client.UserID == clientInfo.UserID {
+							client.UserEntry = clientInfo
 							sendClientInfo(client.Connection, transmissionID, clientInfo)
 						}
 					}
