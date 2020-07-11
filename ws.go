@@ -88,12 +88,24 @@ type OnlineList struct {
 	Users          []*Client `json:"data"`
 }
 
-func getOnlineList(channelID uuid.UUID) []*Client {
+func getDbEntry(userID uuid.UUID, db *gorm.DB) *Client {
+	dbEntry := Client{}
+
+	db.First(&dbEntry, "user_id = ?", userID)
+
+	if dbEntry.ID == 0 {
+		log.Fatal("User ID " + userID.String() + " doens't exist!")
+	}
+
+	return &dbEntry
+}
+
+func getOnlineList(channelID uuid.UUID, db *gorm.DB) []*Client {
 	usersInChannel := []*Client{}
 
 	for _, sub := range channelSubs {
 		if sub.ChannelID == channelID {
-			usersInChannel = append(usersInChannel, sub.UserEntry)
+			usersInChannel = append(usersInChannel, getDbEntry(sub.UserID, db))
 		}
 	}
 
@@ -139,7 +151,7 @@ func sendPowerlevels(conn *websocket.Conn, transmissionID uuid.UUID, config Conf
 }
 
 func sendOnlineList(channelID uuid.UUID, transmissionID uuid.UUID, db *gorm.DB) {
-	usersInChannel := getOnlineList(channelID)
+	usersInChannel := getOnlineList(channelID, db)
 	for _, sub := range channelSubs {
 		if sub.ChannelID == channelID {
 			oList := OnlineList{
@@ -678,7 +690,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						break
 					}
 
-					sendSuccess(conn, transmissionID, getOnlineList(channelMessage.ChannelID))
+					sendSuccess(conn, transmissionID, getOnlineList(channelMessage.ChannelID, db))
 				}
 
 				if channelMessage.Method == "LEAVE" {
