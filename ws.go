@@ -548,6 +548,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							sendChannelList(client.Connection, db, client.UserEntry, transmissionID)
 						}
 					}
+
+					sendOnlineList(permMsg.Permission.ChannelID, transmissionID, db)
 				}
 
 				if permMsg.Method == "DELETE" {
@@ -582,6 +584,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							}
 						}
 					}
+					sendOnlineList(permMsg.Permission.ChannelID, transmissionID, db)
 				}
 			case "chat":
 				if !authed {
