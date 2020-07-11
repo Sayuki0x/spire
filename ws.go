@@ -311,6 +311,19 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var userMessage UserReq
 				json.Unmarshal(msg, &userMessage)
 
+				if userMessage.Method == "RETRIEVE" {
+					retrievedClient := Client{}
+
+					db.First(&retrievedClient, "user_id = ?", userMessage.UserID)
+
+					if retrievedClient.ID == 0 {
+						sendError("NOEXIST", "That user doesn't exist.", conn, transmissionID, userMessage)
+					} else {
+						sendSuccess(conn, transmissionID, retrievedClient)
+					}
+					break
+				}
+
 				if userMessage.Method == "BAN" {
 					if clientInfo.PowerLevel < config.PowerLevels.Ban {
 						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, userMessage)
