@@ -100,6 +100,14 @@ func getDbEntry(userID uuid.UUID, db *gorm.DB) *Client {
 	return &dbEntry
 }
 
+func reverse(messages []ChatMessage) []ChatMessage {
+	for i := 0; i < len(messages)/2; i++ {
+		j := len(messages) - i - 1
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+	return messages
+}
+
 func getOnlineList(channelID uuid.UUID, db *gorm.DB) []*Client {
 	usersInChannel := []*Client{}
 
@@ -902,9 +910,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				chatMessages := []ChatMessage{}
 
 				// TODO: add an offset
-				db.Limit(100).Order("id ASC").Where("channel_id = ?", historyReq.ChannelID).Find(&chatMessages)
-				sendSuccess(conn, transmissionID, chatMessages)
-
+				db.Order("id DESC").Limit(100).Where("channel_id = ?", historyReq.ChannelID).Find(&chatMessages)
+				sendSuccess(conn, transmissionID, reverse(chatMessages))
 			case "challenge":
 				var challengeMessage Challenge
 				json.Unmarshal(msg, &challengeMessage)
