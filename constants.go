@@ -12,5 +12,5 @@ var channelSubs = []*ChannelSub{}
 var homedir, _ = os.UserHomeDir()
 var log *logging.Logger = logging.MustGetLogger("vex")
 
-const version string = "2.3.0"
+const version string = "2.3.1"
 const emptyUserID = "00000000-0000-0000-0000-000000000000"
