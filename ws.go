@@ -906,11 +906,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				db.First(&topMessage, "message_id = ?", historyReq.TopMessage)
 
 				if topMessage.MessageID.String() == emptyUserID {
-					// retrieve latest and send to client
-					messages := []ChatMessage{}
-					db.Limit(100).Order("created_at ASC").Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
-					sendSuccess(conn, transmissionID, messages)
+					db.Order("id DESC").First(&topMessage).Where("channel_id = ?", historyReq.ChannelID)
 				}
+				messages := []ChatMessage{}
+				db.Limit(100).Where("id < ?", topMessage.ID).Where("channel_id = ?", historyReq.ChannelID).Find(&messages)
 
 			case "challenge":
 				var challengeMessage Challenge
