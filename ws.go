@@ -164,6 +164,16 @@ func containsUUID(id []uuid.UUID, query uuid.UUID) bool {
 	return false
 }
 
+func sendClientInfo(conn *websocket.Conn, transmissionID uuid.UUID, clientInfo Client) {
+	// give client their user info
+	clientMsg := ClientPush{
+		Type:      "clientInfo",
+		Client:    clientInfo,
+		MessageID: uuid.NewV4(),
+	}
+	sendMessage(clientMsg, conn)
+}
+
 func getActiveChannels(client Client) []uuid.UUID {
 	activeChannels := []uuid.UUID{}
 
@@ -441,6 +451,13 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					sendSuccess(conn, transmissionID, clientInfo)
 					activeChannels := getActiveChannels(clientInfo)
+
+					for _, client := range globalClientList {
+						if client.UserID == clientInfo.UserID {
+							client.UserEntry = clientInfo
+							sendClientInfo(client.Connection, transmissionID, clientInfo)
+						}
+					}
 
 					for _, id := range activeChannels {
 						sendOnlineList(id, uuid.NewV4(), db)
@@ -836,17 +853,9 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							authed = true
 
 							sendSuccess(conn, transmissionID, clientInfo)
-
 							sendPowerlevels(conn, transmissionID, config)
 
-							// give client their user info
-							clientMsg := ClientPush{
-								Type:           "clientInfo",
-								Client:         clientInfo,
-								MessageID:      uuid.NewV4(),
-								TransmissionID: sub.TransmissionID,
-							}
-							sendMessage(clientMsg, conn)
+							sendClientInfo(conn, transmissionID, clientInfo)
 
 							// send the channel list
 							sendChannelList(conn, db, clientInfo, sub.TransmissionID)
