@@ -93,13 +93,16 @@ func getDB(config Config) *gorm.DB {
 	// initialize database, support sqlite and mysql
 	db, err := gorm.Open(config.DbType, config.DbConnectionStr)
 	check(err)
+
 	db.AutoMigrate(&Client{})
 	db.AutoMigrate(&Channel{})
 	db.AutoMigrate(&ChatMessage{})
 	db.AutoMigrate(&ChannelPermission{})
 	db.AutoMigrate(&File{})
 
-	db.Model(&ChatMessage{}).ModifyColumn("message", "varchar(2000)")
+	if config.DbType == "mysql" {
+		db.Model(&ChatMessage{}).ModifyColumn("message", "varchar(2000)")
+	}
 
 	return db
 }
