@@ -168,6 +168,10 @@ func runUtils(cliArgs CliArgs, db *gorm.DB) {
 			db.Create(&Chat)
 		}
 
+		for _, File := range slurpData.Files {
+			db.Create(&File)
+		}
+
 		log.Notice("Import complete!")
 		os.Exit(0)
 	}
