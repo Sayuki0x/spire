@@ -99,7 +99,7 @@ func getDB(config Config) *gorm.DB {
 	db.AutoMigrate(&ChannelPermission{})
 	db.AutoMigrate(&File{})
 
-	db.Model(&ChatMessage{}).ModifyColumn("message", "text")
+	db.Model(&ChatMessage{}).ModifyColumn("message", "varchar(2000)")
 
 	return db
 }

@@ -666,6 +666,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var chat ChatMessage
 				json.Unmarshal(msg, &chat)
 
+				if len(chat.Message) > 2000 {
+					sendError("TOOLONG", "The max message length is 2000 characters.", conn, transmissionID, chat)
+					break
+				}
+
 				var requestedChannel Channel
 				db.First(&requestedChannel, "channel_id = ?", chat.ChannelID.String())
 
