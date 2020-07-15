@@ -121,6 +121,10 @@ func getOnlineList(channelID uuid.UUID, db *gorm.DB) []*Client {
 }
 
 func hasChannelPermission(channelID uuid.UUID, clientInfo *Client, db *gorm.DB) bool {
+	if channelID == clientInfo.UserID {
+		return true
+	}
+
 	hasPermission := false
 
 	var requestedChannel Channel
