@@ -78,6 +78,7 @@ type Dump struct {
 	Channels           []Channel           `json:"channels"`
 	ChannelPermissions []ChannelPermission `json:"channelPermissions"`
 	Chats              []ChatMessage       `json:"chat"`
+	Files              []File              `json:"files"`
 }
 
 // StatusRes is the status http api endpoing response.
@@ -97,5 +98,8 @@ func getDB(config Config) *gorm.DB {
 	db.AutoMigrate(&ChatMessage{})
 	db.AutoMigrate(&ChannelPermission{})
 	db.AutoMigrate(&File{})
+
+	db.Model(&ChatMessage{}).ModifyColumn("message", "text")
+
 	return db
 }

@@ -138,6 +138,7 @@ func runUtils(cliArgs CliArgs, db *gorm.DB) {
 		db.Find(&dump.ChannelPermissions)
 		db.Find(&dump.Chats)
 		db.Find(&dump.Channels)
+		db.Find(&dump.Files)
 
 		writeJSONFile(cliArgs.dumpFile, dump)
 		log.Notice("Backup completed, saved to " + cliArgs.dumpFile)
