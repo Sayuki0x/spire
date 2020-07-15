@@ -440,16 +440,19 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				}
 
 				if userMessage.Method == "UPDATE" {
-					if clientInfo.PowerLevel != 100 {
-						log.Warning("User does not have a high enough power level!")
-						sendError("PWRLVL", "You don't have a high enough power level.", conn, transmissionID, userMessage)
-						break
-					}
 
 					var clientToUpdate Client
 
 					db.First(&clientToUpdate, "user_id = ?", userMessage.UserID)
-					clientToUpdate.PowerLevel = userMessage.PowerLevel
+
+					if userMessage.PowerLevel != 0 && clientInfo.PowerLevel > config.PowerLevels.Op {
+						clientToUpdate.PowerLevel = userMessage.PowerLevel
+					}
+
+					if userMessage.Avatar.String() != emptyUserID && clientInfo.UserID == userMessage.UserID {
+						clientToUpdate.Avatar = userMessage.Avatar
+					}
+
 					db.Save(&clientToUpdate)
 
 					sendSuccess(conn, transmissionID, clientToUpdate)

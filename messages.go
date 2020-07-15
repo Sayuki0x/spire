@@ -119,6 +119,7 @@ type UserReq struct {
 	ChannelID  uuid.UUID `json:"channelID"`
 	PowerLevel int       `json:"powerLevel"`
 	UserID     uuid.UUID `json:"userID"`
+	Avatar     uuid.UUID `json:"avatar"`
 }
 
 // IdentityReq is a message for performing operations on identities.

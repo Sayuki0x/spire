@@ -48,6 +48,7 @@ type Client struct {
 	PowerLevel int       `json:"powerLevel"`
 	UserID     uuid.UUID `json:"userID"`
 	Banned     bool      `json:"banned"`
+	Avatar     uuid.UUID `json:"avatar"`
 }
 
 // Channel database entry
