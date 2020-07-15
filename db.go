@@ -71,6 +71,7 @@ type ChatMessage struct {
 	Message        string    `json:"message"`
 	ChannelID      uuid.UUID `json:"channelID"`
 	Type           string    `json:"type"`
+	Author         Client    `json:"author"`
 }
 
 // Dump of all data for import by another server

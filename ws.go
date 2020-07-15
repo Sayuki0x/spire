@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -121,6 +122,7 @@ func getOnlineList(channelID uuid.UUID, db *gorm.DB) []*Client {
 }
 
 func hasChannelPermission(channelID uuid.UUID, clientInfo *Client, db *gorm.DB) bool {
+	fmt.Println(channelID.String(), clientInfo.UserID.String())
 	if channelID == clientInfo.UserID {
 		return true
 	}
@@ -222,6 +224,7 @@ func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo *Client, sendingConnect
 		return
 	}
 
+	Chat.Author = *clientInfo
 	Chat.UserID = sendingClient.UserID
 	Chat.MessageID = uuid.NewV4()
 	Chat.TransmissionID = uuid.NewV4()
@@ -525,10 +528,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					break
 				}
 
-				var requestedChannel Channel
-				db.First(&requestedChannel, "channel_id = ?", fileMsg.ChannelID.String())
-
-				if !hasChannelPermission(requestedChannel.ChannelID, clientInfo, db) {
+				if !hasChannelPermission(fileMsg.ChannelID, clientInfo, db) {
 					log.Warning("User is sending file to channel he has no access to.")
 					sendError("NOACCESS", "You don't have permission to that channel.", conn, transmissionID, fileMsg)
 					break
@@ -923,7 +923,18 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 				// TODO: add an offset
 				db.Order("id DESC").Limit(100).Where("channel_id = ?", historyReq.ChannelID).Find(&chatMessages)
-				sendSuccess(conn, transmissionID, reverse(chatMessages))
+
+				messagesWithUserObj := []ChatMessage{}
+
+				for _, msg := range chatMessages {
+					author := Client{}
+					db.First(&author, "user_id = ?", msg.UserID)
+					msg.Author = author
+
+					messagesWithUserObj = append(messagesWithUserObj, msg)
+				}
+
+				sendSuccess(conn, transmissionID, reverse(messagesWithUserObj))
 			case "challenge":
 				var challengeMessage Challenge
 				json.Unmarshal(msg, &challengeMessage)
