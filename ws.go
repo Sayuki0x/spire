@@ -985,6 +985,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				// remove this once the table is populated
 				if user.Color == "" {
 					user.Color = "#" + user.UserID.String()[0:6]
+					db.Save(&user)
 				}
 
 				if challengeMessage.TransmissionID.String() == emptyUserID {
