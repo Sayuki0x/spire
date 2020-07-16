@@ -49,6 +49,7 @@ type Client struct {
 	UserID     uuid.UUID `json:"userID"`
 	Banned     bool      `json:"banned"`
 	Avatar     uuid.UUID `json:"avatar"`
+	Color      string    `json:"color"`
 }
 
 // Channel database entry

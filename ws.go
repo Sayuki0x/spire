@@ -1052,6 +1052,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						} else {
 							log.Info("Registration verified successfully. Creating user.")
 							db.Model(&newClient).Update("PubKey", identityMessage.PubKey)
+							db.Model(&newClient).Update("Color", newClient.UserID.String()[0:6])
+
 							sendSuccess(conn, transmissionID, newClient)
 						}
 					} else {
