@@ -495,6 +495,10 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 								Client:         &clientToUpdate,
 							}
 							sendMessage(clientMsg, client.Connection)
+
+							if client.UserEntry.UserID == clientToUpdate.UserID {
+								client.UserEntry = &clientToUpdate
+							}
 						}
 					}
 				}
