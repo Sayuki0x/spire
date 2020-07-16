@@ -969,6 +969,12 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				for _, msg := range chatMessages {
 					author := Client{}
 					db.First(&author, "user_id = ?", msg.UserID)
+
+					if author.Color == "" {
+						author.Color = "#" + author.UserID.String()[0:6]
+						db.Save(&author)
+					}
+
 					msg.Author = author
 
 					messagesWithUserObj = append(messagesWithUserObj, msg)
