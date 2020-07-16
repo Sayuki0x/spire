@@ -47,7 +47,7 @@ func FileHandler(db *gorm.DB) http.Handler {
 			http.Error(res, "404 not found.", 404)
 		} else {
 			file := readJSONFile(FileFolder + "/" + fileID)
-
+			res.Header().Set("Cache-Control", "max-age=31536000") // 1 year
 			res.Write(file)
 		}
 
