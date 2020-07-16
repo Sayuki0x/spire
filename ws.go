@@ -224,7 +224,7 @@ func broadcast(db *gorm.DB, Chat ChatMessage, clientInfo *Client, sendingConnect
 		return
 	}
 
-	Chat.Author = *clientInfo
+	Chat.Author = sendingClient
 	Chat.UserID = sendingClient.UserID
 	Chat.MessageID = uuid.NewV4()
 	Chat.TransmissionID = uuid.NewV4()
