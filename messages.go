@@ -116,6 +116,7 @@ type UserReq struct {
 
 	Method     string    `json:"method"`
 	Username   string    `json:"username"`
+	Color      string    `json:"color"`
 	ChannelID  uuid.UUID `json:"channelID"`
 	PowerLevel int       `json:"powerLevel"`
 	UserID     uuid.UUID `json:"userID"`

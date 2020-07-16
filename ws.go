@@ -452,20 +452,29 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					db.First(&clientToUpdate, "user_id = ?", userMessage.UserID)
 
-					sendAvatarUpdate := true
+					broadcastPeerChange := false
+					broadcastOnlineList := false
 
 					if userMessage.PowerLevel != 0 && clientInfo.PowerLevel > config.PowerLevels.Op {
 						clientToUpdate.PowerLevel = userMessage.PowerLevel
+						broadcastOnlineList = true
 					}
 
 					if userMessage.Avatar.String() != emptyUserID && clientInfo.UserID == userMessage.UserID {
 						clientToUpdate.Avatar = userMessage.Avatar
-						sendAvatarUpdate = true
+						broadcastPeerChange = true
 					}
 
-					// if userMessage.Username != "" && clientInfo.UserID == userMessage.UserID {
-					// 	clientToUpdate.Username = userMessage.Username
-					// }
+					if userMessage.Color != "" && clientInfo.UserID == userMessage.UserID {
+						clientToUpdate.Color = userMessage.Color
+						broadcastPeerChange = true
+						broadcastOnlineList = true
+					}
+
+					if userMessage.Username != "" && clientInfo.UserID == userMessage.UserID {
+						clientToUpdate.Username = userMessage.Username
+						broadcastOnlineList = true
+					}
 
 					db.Save(&clientToUpdate)
 
@@ -485,7 +494,14 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						}
 					}
 
-					if sendAvatarUpdate {
+					if broadcastOnlineList {
+						activeChannels := getActiveChannels(&clientToUpdate)
+						for _, id := range activeChannels {
+							sendOnlineList(id, uuid.NewV4(), db)
+						}
+					}
+
+					if broadcastPeerChange {
 						for _, client := range globalClientList {
 							// give client the changed user info
 							clientMsg := ClientPush{
@@ -966,6 +982,11 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 				var user Client
 				db.First(&user, "pub_key = ?", challengeMessage.PubKey)
 
+				// remove this once the table is populated
+				if user.Color == "" {
+					user.Color = "#" + user.UserID.String()[0:6]
+				}
+
 				if challengeMessage.TransmissionID.String() == emptyUserID {
 					sendError("VRSNERR", "You are using an unsupported client. Please upgrade.", conn, transmissionID, challengeMessage)
 					conn.Close()
@@ -1052,7 +1073,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						} else {
 							log.Info("Registration verified successfully. Creating user.")
 							db.Model(&newClient).Update("PubKey", identityMessage.PubKey)
-							db.Model(&newClient).Update("Color", newClient.UserID.String()[0:6])
+							db.Model(&newClient).Update("Color", "#"+newClient.UserID.String()[0:6])
 
 							sendSuccess(conn, transmissionID, newClient)
 						}
