@@ -458,7 +458,7 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 						clientToUpdate.PowerLevel = userMessage.PowerLevel
 					}
 
-					if userMessage.Avatar.String() != emptyUserID {
+					if userMessage.Avatar.String() != emptyUserID && clientInfo.UserID == userMessage.UserID {
 						clientToUpdate.Avatar = userMessage.Avatar
 						sendAvatarUpdate = true
 					}
