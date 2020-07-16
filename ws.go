@@ -452,13 +452,20 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 
 					db.First(&clientToUpdate, "user_id = ?", userMessage.UserID)
 
+					sendAvatarUpdate := true
+
 					if userMessage.PowerLevel != 0 && clientInfo.PowerLevel > config.PowerLevels.Op {
 						clientToUpdate.PowerLevel = userMessage.PowerLevel
 					}
 
-					if userMessage.Avatar.String() != emptyUserID && clientInfo.UserID == userMessage.UserID {
+					if userMessage.Avatar.String() != emptyUserID {
 						clientToUpdate.Avatar = userMessage.Avatar
+						sendAvatarUpdate = true
 					}
+
+					// if userMessage.Username != "" && clientInfo.UserID == userMessage.UserID {
+					// 	clientToUpdate.Username = userMessage.Username
+					// }
 
 					db.Save(&clientToUpdate)
 
@@ -470,11 +477,24 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 							clientMsg := ClientPush{
 								Type:           "clientInfo",
 								MessageID:      uuid.NewV4(),
-								TransmissionID: transmissionID,
+								TransmissionID: uuid.NewV4(),
 								Client:         &clientToUpdate,
 							}
 							sub.UserEntry = &clientToUpdate
 							sendMessage(clientMsg, conn)
+						}
+					}
+
+					if sendAvatarUpdate {
+						for _, client := range globalClientList {
+							// give client the changed user info
+							clientMsg := ClientPush{
+								Type:           "peerChange",
+								MessageID:      uuid.NewV4(),
+								TransmissionID: uuid.NewV4(),
+								Client:         &clientToUpdate,
+							}
+							sendMessage(clientMsg, client.Connection)
 						}
 					}
 				}
