@@ -948,6 +948,8 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 								Connection: conn,
 							}
 							globalClientList = append(globalClientList, connectedClient)
+						} else {
+							log.Warning("User did not authorize successfully.")
 						}
 					}
 				}
