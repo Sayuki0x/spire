@@ -543,6 +543,32 @@ func SocketHandler(keys KeyPair, db *gorm.DB, config Config) http.Handler {
 					}
 
 				}
+			case "emoji":
+				if !authed {
+					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)
+					log.Warning("Not authorized!")
+					break
+				}
+
+				emojiMsg := EmojiReq{}
+				json.Unmarshal(msg, &emojiMsg)
+
+				if emojiMsg.Method == "RETRIEVE" {
+					emojis := []Emoji{}
+					db.Where("name LIKE ?", "%"+emojiMsg.Name+"%").Find(&emojis)
+
+					sendSuccess(conn, transmissionID, emojis)
+					break
+				}
+
+				if emojiMsg.Method == "CREATE" {
+					newEmoji := Emoji{EmojiID: uuid.NewV4(), FileID: emojiMsg.FileID, Name: emojiMsg.Name}
+					db.Create(&newEmoji)
+
+					sendSuccess(conn, transmissionID, newEmoji)
+					break
+				}
+
 			case "file":
 				if !authed {
 					sendError("NOAUTH", "You're not authorized yet!", conn, transmissionID, msg)

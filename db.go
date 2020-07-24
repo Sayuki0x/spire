@@ -24,6 +24,14 @@ type File struct {
 	OwnerID   uuid.UUID `json:"ownerID"`
 }
 
+// Emojis are a special type of file that are used as chat emojis
+type Emoji struct {
+	Model
+	EmojiID uuid.UUID `json:"emojiID"`
+	FileID  uuid.UUID `json:"fileID"`
+	Name    string    `json:"name"`
+}
+
 // ChatModel is similar to Model but shows createdAt key
 type ChatModel struct {
 	ID        uint       `json:"index" gorm:"primary_key"`
@@ -102,6 +110,7 @@ func getDB(config Config) *gorm.DB {
 	db.AutoMigrate(&ChatMessage{})
 	db.AutoMigrate(&ChannelPermission{})
 	db.AutoMigrate(&File{})
+	db.AutoMigrate(&Emoji{})
 
 	if config.DbType == "mysql" {
 		db.Model(&ChatMessage{}).ModifyColumn("message", "varchar(2000)")

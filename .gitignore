@@ -3,3 +3,4 @@ vex*
 config*.json
 dump.json
 keys/*
+spire

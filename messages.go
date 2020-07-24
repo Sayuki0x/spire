@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-
 	"github.com/gorilla/websocket"
 	uuid "github.com/satori/go.uuid"
 )
@@ -134,6 +132,16 @@ type IdentityReq struct {
 	TransmissionID uuid.UUID `json:"transmissionID"`
 }
 
+// IdentityReq is a message for performing operations on emojis.
+type EmojiReq struct {
+	Type           string    `json:"type"`
+	Method         string    `json:"method"`
+	TransmissionID uuid.UUID `json:"transmissionID"`
+	FileID         uuid.UUID `json:"fileID"`
+	Name           string    `json:"name"`
+	Data           []Emoji   `json:"data"`
+}
+
 type FileReq struct {
 	Type           string    `json:"type"`
 	File           string    `json:"file"`
@@ -175,9 +183,6 @@ type ClientPush struct {
 
 func sendMessage(msg interface{}, conn *websocket.Conn) {
 	conn.WriteJSON(msg)
-
-	jsonMessage, _ := json.Marshal(msg)
-	log.Debug("OUT", string(jsonMessage))
 }
 
 func sendError(code string, message string, conn *websocket.Conn, transmissionID uuid.UUID, request interface{}) {
